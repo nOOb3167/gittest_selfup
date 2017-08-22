@@ -82,7 +82,7 @@ SET(GITTEST_LIB_HEADERS
 SET(GITTEST_LIB_SOURCES
   src/bypart_git.cpp
   src/frame.cpp
-  src/main.cpp    # nice naming LUL
+  src/gittest.cpp
 )
 
 # gittest_ev2_serv
