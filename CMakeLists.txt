@@ -72,6 +72,12 @@ ELSEIF (UNIX)
   )
 ENDIF ()
 
+SET(GITTEST_SELFUP_INCLUDE_DIRS
+  ${CMAKE_SOURCE_DIR}/include
+  ${GITTEST_COMMON_PREFIX}/include    # for Gittest Common
+  ${GITTEST_DEP_INCLUDE_DIRS}
+)
+
 # gittest_lib
 
 SET(GITTEST_LIB_HEADERS
@@ -84,6 +90,21 @@ SET(GITTEST_LIB_SOURCES
   src/frame.cpp
   src/gittest.cpp
 )
+
+# gittest_ev2_maint
+
+SET(GITTEST_EV2_MAINT_HEADERS
+  ${GITTEST_LIB_HEADERS}
+)
+
+SET(GITTEST_EV2_MAINT_SOURCES
+  src/gittest_ev2_maint.cpp
+  ${GITTEST_LIB_SOURCES}
+)
+
+ADD_EXECUTABLE(gittest_ev2_maint ${GITTEST_EV2_MAINT_HEADERS} ${GITTEST_EV2_MAINT_SOURCES})
+TARGET_LINK_LIBRARIES(gittest_ev2_maint gittest_common ${GITTEST_DEP_LIBRARIES})
+TARGET_INCLUDE_DIRECTORIES(gittest_ev2_maint PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
 
 # gittest_ev2_serv
 
@@ -101,11 +122,7 @@ SET(GITTEST_EV2_SERV_SOURCES
 
 ADD_EXECUTABLE(gittest_ev2_serv ${GITTEST_EV2_SERV_HEADERS} ${GITTEST_EV2_SERV_SOURCES})
 TARGET_LINK_LIBRARIES(gittest_ev2_serv gittest_common ${GITTEST_DEP_LIBRARIES})
-TARGET_INCLUDE_DIRECTORIES(gittest_ev2_serv PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${GITTEST_COMMON_PREFIX}/include    # for Gittest Common
-  ${GITTEST_DEP_INCLUDE_DIRS}
-)
+TARGET_INCLUDE_DIRECTORIES(gittest_ev2_serv PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
 
 # gittest_ev2_selfupdate, gittest_ev2_selfupdate_clone
 
@@ -126,15 +143,14 @@ ADD_EXECUTABLE(gittest_ev2_selfupdate ${GITTEST_EV2_SELFUPDATE_HEADERS} ${GITTES
 ADD_EXECUTABLE(gittest_ev2_selfupdate_clone ${GITTEST_EV2_SELFUPDATE_HEADERS} ${GITTEST_EV2_SELFUPDATE_SOURCES})
 TARGET_LINK_LIBRARIES(gittest_ev2_selfupdate gittest_common ${GITTEST_DEP_LIBRARIES})
 TARGET_LINK_LIBRARIES(gittest_ev2_selfupdate_clone gittest_common ${GITTEST_DEP_LIBRARIES})
-TARGET_INCLUDE_DIRECTORIES(gittest_ev2_selfupdate PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${GITTEST_COMMON_PREFIX}/include    # for Gittest Common
-  ${GITTEST_DEP_INCLUDE_DIRS}
-)
-TARGET_INCLUDE_DIRECTORIES(gittest_ev2_selfupdate_clone PUBLIC
-  ${CMAKE_SOURCE_DIR}/include
-  ${GITTEST_COMMON_PREFIX}/include    # for Gittest Common
-  ${GITTEST_DEP_INCLUDE_DIRS}
-)
+TARGET_INCLUDE_DIRECTORIES(gittest_ev2_selfupdate PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
+TARGET_INCLUDE_DIRECTORIES(gittest_ev2_selfupdate_clone PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
 TARGET_COMPILE_DEFINITIONS(gittest_ev2_selfupdate       PRIVATE GS_CONFIG_DEFS_GITTEST_EV2_SELFUPDATE_VERSUB="versub_ev2_selfupdate")
 TARGET_COMPILE_DEFINITIONS(gittest_ev2_selfupdate_clone PRIVATE GS_CONFIG_DEFS_GITTEST_EV2_SELFUPDATE_VERSUB="versub_ev2_selfupdate_clone")
+
+ADD_CUSTOM_TARGET(dummyprep
+  COMMAND
+    gittest_ev2_maint
+      --gsreposetup
+      --xdummyprep
+)
