@@ -40,6 +40,9 @@ int gs_ev2_maint_main_mode_dummyprep(
 	git_oid CommitMainOid = {};
 	git_oid CommitSelfUpdateOid = {};
 
+	if (!!(r = gs_directory_create_unless_exist(MaintenanceBkpPathBuf, LenMaintenanceBkpPath)))
+		GS_GOTO_CLEAN();
+
 	if (!!(r = gs_directory_create_unless_exist(MainDirectoryFileNameBuf, LenMainDirectoryFileName)))
 		GS_GOTO_CLEAN();
 
