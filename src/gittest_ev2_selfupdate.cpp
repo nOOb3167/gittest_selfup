@@ -31,7 +31,7 @@ int gs_ev2_selfupdate_reexec()
 	if (!!(r = gs_get_current_executable_filename(CurExeBuf, sizeof CurExeBuf, &LenCurExe)))
 		GS_GOTO_CLEAN();
 
-	ss << std::string(CurExeBuf, LenCurExe) << "\0" << std::string(GS_SELFUPDATE_ARG_CHILD) << "\0";
+	ss << std::string(GS_SELFUPDATE_ARG_CHILD) << "\0";
 	out = ss.str();
 
 	if (!!(r = gs_process_start_ex(
@@ -54,7 +54,7 @@ int gs_ev2_selfupdate_dryrun(
 	std::stringstream ss;
 	std::string out;
 
-	ss << std::string(RunFileNameBuf, LenRunFileName) << "\0" << std::string(GS_SELFUPDATE_ARG_VERSUB) << "\0";
+	ss << std::string(GS_SELFUPDATE_ARG_VERSUB) << "\0";
 	out = ss.str();
 
 	if (!!(r = gs_process_start_ex(
