@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cstring>
 
 #include <gittest/misc.h>
 #include <gittest/log.h>

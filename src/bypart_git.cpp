@@ -38,7 +38,7 @@ int gs_strided_for_oid_vec(
 	uint32_t DataOffsetPlusOffset = DataOffset + offsetof(git_oid, id);
 	uint32_t EltNum = OidVecNum;
 	uint32_t EltSize = GIT_OID_RAWSZ;
-	uint32_t EltStride = sizeof git_oid;
+	uint32_t EltStride = sizeof (git_oid);
 
 	GsStrided Strided = {
 		DataStart,
@@ -48,7 +48,7 @@ int gs_strided_for_oid_vec(
 		EltStride,
 	};
 
-	uint32_t DataLength = OidVecNum * sizeof git_oid;
+	uint32_t DataLength = OidVecNum * sizeof (git_oid);
 
 	if (EltSize > EltStride || DataOffset + EltStride * EltNum > DataLength)
 		GS_ERR_CLEAN(1);

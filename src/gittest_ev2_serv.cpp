@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 
 #include <gittest/misc.h>
 #include <gittest/config.h>
