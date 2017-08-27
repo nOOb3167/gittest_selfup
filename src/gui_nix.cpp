@@ -286,7 +286,7 @@ clean:
 }
 
 int gs_gui_nix_readfile(
-	std::string &FName,
+	const std::string &FName,
 	std::string *oData)
 {
 	std::stringstream Stream;
@@ -352,7 +352,7 @@ void gs_gui_nix_threadfunc222(Window Win)
 
 	Ev.xclient.type = ClientMessage;
 	Ev.xclient.window = Win;
-	Ev.xclient.message_type = d_XInternAtom(Disp, "DUMMY", False);
+	Ev.xclient.message_type = d_XInternAtom(Disp, (char *) "DUMMY", False);
 	Ev.xclient.format = 8; /* data.b active */
 	memset(Ev.xclient.data.b, 0, sizeof Ev.xclient.data.b);
 
@@ -387,7 +387,7 @@ int gs_gui_nix_threadfunc()
 
 	struct AuxImg Img0 = {};
 
-	if (!!(r = gs_gui_nix_readimage("img2_8_8_.data", &Img0))
+	if (!!(r = gs_gui_nix_readimage("img2_8_8_.data", &Img0)))
 		GS_GOTO_CLEAN();
 
 	if (!(Disp = d_XOpenDisplay(NULL)))

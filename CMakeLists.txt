@@ -49,6 +49,8 @@ ELSEIF (UNIX)
   FIND_PACKAGE(ZLIB REQUIRED)
   FIND_PACKAGE(LibEvent REQUIRED)
 
+  FIND_PACKAGE(X11 REQUIRED)
+
   ## http://stackoverflow.com/questions/1620918/cmake-and-libpthread/29871891#29871891
   ## https://cmake.org/cmake/help/v3.6/module/FindThreads.html
   ##   extra magic for gcc linking with pthreads (-pthread)
@@ -62,13 +64,17 @@ ELSEIF (UNIX)
     ${LIBGIT2_INCLUDE_DIR}
     ${LIBEVENT_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIR}
+    ${X11_INCLUDE_DIR}
   )
   SET (GITTEST_DEP_LIBRARIES
     ${LIBGIT2_LIBRARIES}
     ${LIBEVENT_LIBRARIES}
     # ZLIB must be on the link list AFTER LibGit2 to resolve symbols
     ${ZLIB_LIBRARIES}
+    ${X11_LIBRARIES}
     Threads::Threads
+    # FIXME: improve this (for dlopen/dlsym)
+    dl
   )
 ENDIF ()
 
