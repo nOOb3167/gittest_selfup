@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include <fstream>
 #include <sstream>
@@ -34,7 +35,13 @@ https://tronche.com/gui/x/icccm/sec-4.html#s-4.2.8.1
   WM_DELETE_WINDOW
 https://groups.google.com/forum/#!topic/comp.windows.x/oLc9JJDwnZM
   about XDestroyImage (calls XFree on data member..)
+https://code.woboq.org/qt5/include/X11/X.h.html
+https://refspecs.linuxfoundation.org/LSB_3.1.0/LSB-Desktop-generic/LSB-Desktop-generic/libx11-ddefs.html
+  X type definitions (ex Pixmap as XID)
 */
+
+// FIXME: randomly chosen but see xres for ability to detect assigned/unassigned XID range https://linux.die.net/man/3/xres
+#define GS_XLIB_XID_MAGIC_SENTINEL 0x13D0896E
 
 #define GS_GUI_NIX_XLIB_NAME "libX11.so"
 
@@ -54,16 +61,25 @@ struct AuxImgP
 	Pixmap mPix;
 };
 
+struct AuxThreadFuncCtx2
+{
+	std::mutex mMutex;
+	int mR;
+	Window mWin;
+};
+
 typedef Display * (* d_XOpenDisplay_t)(char *display_name);
 typedef int       (* d_XCloseDisplay_t)(Display *display);
 typedef int       (* d_XDefaultScreen_t)(Display *display);
 typedef Window    (* d_XCreateSimpleWindow_t)(Display *display, Window parent, int x, int y,
 	unsigned int width, unsigned int height, unsigned int border_width, unsigned long border, unsigned long background);
+typedef int       (* d_XDestroyWindow_t)(Display *display, Window w)
 typedef Window    (* d_XRootWindow_t)(Display *display, int screen_number);
 typedef unsigned long(* d_XBlackPixel_t)(Display *display, int screen_number);
 typedef unsigned long(* d_XWhitePixel_t)(Display *display, int screen_number);
 typedef int       (* d_XMapRaised_t)(Display *display, Window w);
 typedef int       (* d_XNextEvent_t)(Display *display, XEvent *event_return);
+typedef Bool      (* d_XCheckIfEvent_t)(Display *display, XEvent *event_return, Bool(*predicate)(), XPointer arg);
 typedef XImage *  (* d_XCreateImage_t)(Display *display, Visual *visual, unsigned int
 	depth, int format, int offset, char *data, unsigned int width,
 	unsigned int height, int bitmap_pad, int bytes_per_line);
@@ -71,6 +87,7 @@ typedef Status    (* d_XMatchVisualInfo_t)(Display *display, int screen, int dep
 	klass, XVisualInfo *vinfo_return);
 typedef Pixmap    (* d_XCreatePixmap_t)(Display *display, Drawable d, unsigned int width,
 	unsigned int height, unsigned int depth);
+typedef int       (* d_XFreePixmap_t)(Display *display, Pixmap pixmap);
 typedef GC        (* d_XCreateGC_t)(Display *display, Drawable d, unsigned long valuemask,
 	XGCValues *values);
 typedef int       (* d_XFreeGC_t)(Display *display, GC gc);
@@ -94,15 +111,18 @@ d_XOpenDisplay_t        d_XOpenDisplay;
 d_XCloseDisplay_t       d_XCloseDisplay;
 d_XDefaultScreen_t      d_XDefaultScreen;
 d_XCreateSimpleWindow_t d_XCreateSimpleWindow;
+d_XDestroyWindow_t      d_XDestroyWindow;
 d_XRootWindow_t         d_XRootWindow;
 d_XBlackPixel_t         d_XBlackPixel;
 d_XWhitePixel_t         d_XWhitePixel;
 d_XMapRaised_t          d_XMapRaised;
 d_XNextEvent_t          d_XNextEvent;
+d_XCheckIfEvent_t       d_XCheckIfEvent;
 d_XCreateImage_t        d_XCreateImage;
 d_XDestroyImage_t       d_XDestroyImage;
 d_XMatchVisualInfo_t    d_XMatchVisualInfo;
 d_XCreatePixmap_t       d_XCreatePixmap;
+d_XFreePixmap_t         d_XFreePixmap;
 d_XCreateGC_t           d_XCreateGC;
 d_XFreeGC_t             d_XFreeGC;
 d_XPutImage_t           d_XPutImage;
@@ -132,6 +152,8 @@ int gs_gui_nix_xlibinit()
 		GS_ERR_CLEAN(1);
 	if (!(d_XCreateSimpleWindow = (d_XCreateSimpleWindow_t)dlsym(Handle, "XCreateSimpleWindow")))
 		GS_ERR_CLEAN(1);
+	if (!(d_XDestroyWindow = (d_XDestroyWindow_t)dlsym(Handle, "XDestroyWindow")))
+		GS_ERR_CLEAN(1);
 	if (!(d_XRootWindow = (d_XRootWindow_t)dlsym(Handle, "XRootWindow")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XBlackPixel = (d_XBlackPixel_t)dlsym(Handle, "XBlackPixel")))
@@ -142,6 +164,8 @@ int gs_gui_nix_xlibinit()
 		GS_ERR_CLEAN(1);
 	if (!(d_XNextEvent = (d_XNextEvent_t)dlsym(Handle, "XNextEvent")))
 		GS_ERR_CLEAN(1);
+	if (!(d_XCheckIfEvent = (d_XCheckIfEvent_t)dlsym(Handle, "XCheckIfEvent")))
+		GS_ERR_CLEAN(1);
 	if (!(d_XCreateImage = (d_XCreateImage_t)dlsym(Handle, "XCreateImage")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XDestroyImage = (d_XDestroyImage_t)dlsym(Handle, "XDestroyImage")))
@@ -149,6 +173,8 @@ int gs_gui_nix_xlibinit()
 	if (!(d_XMatchVisualInfo = (d_XMatchVisualInfo_t)dlsym(Handle, "XMatchVisualInfo")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XCreatePixmap = (d_XCreatePixmap_t)dlsym(Handle, "XCreatePixmap")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XFreePixmap = (d_XFreePixmap_t)dlsym(Handle, "XFreePixmap")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XCreateGC = (d_XCreateGC_t)dlsym(Handle, "XCreateGC")))
 		GS_ERR_CLEAN(1);
@@ -169,7 +195,13 @@ int gs_gui_nix_xlibinit()
 	if (!(d_XInitThreads = (d_XInitThreads_t)dlsym(Handle, "XInitThreads")))
 		GS_ERR_CLEAN(1);
 
+	/* XInitThreads is an API of notoriously poor design.
+	   If an another thread/library/framework already calls it, we must not do so.
+	   It must be called somewhere, however.
+	   Preprocessor guard allows for skipping the call if necessary. */
+#ifndef GS_XLIB_NO_INIT_THREADS
 	d_XInitThreads();
+#endif
 
 noclean:
 	XlibHandle = Handle;
@@ -214,17 +246,19 @@ clean:
 	return r;
 }
 
-int gs_gui_nix_pixmap_from_rgb(Display *Disp, Visual *Visual, Window Window,
+int gs_gui_nix_pixmap_from_rgb(
+	Display *Disp, Visual *Visual, Window Window,
 	int Width, int Height,
 	const char *ImgDataBuf, size_t LenImgData,
 	Pixmap *oPix)
 {
 	/* ImgData is RGB - must be converted */
 	int r = 0;
+	
+	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
 	XImage *Img = NULL;
-	Pixmap Pix = 0;
-	GC Gc = 0;
+	GC Gc = nullptr;
 	XGCValues GcValues = {};
 
 	char *DataCpy = NULL;
@@ -277,6 +311,13 @@ int gs_gui_nix_pixmap_from_rgb(Display *Disp, Visual *Visual, Window Window,
 		*oPix = Pix;
 
 clean:
+	if (!!r) {
+		if (Pix != GS_XLIB_XID_MAGIC_SENTINEL)
+			d_XFreePixmap(Disp, Pix);
+	}
+
+	if (Gc != nullptr)
+		d_XFreeGc(Disp, Gc);
 	if (Img)
 		d_XDestroyImage(Img);
 	if (DataCpy)
@@ -339,33 +380,108 @@ clean:
 	return r;
 }
 
-void gs_gui_nix_threadfunc222(Window Win)
+int gs_gui_nix_readimage_p(
+	Display *Disp, Visual *Visual, Window Window,
+	const std::string &FName,
+	struct AuxImgP *oImgP)
 {
 	int r = 0;
 
-	Display *Disp = NULL;
+	struct AuxImgP ImgP = {};
 
-	XEvent Ev = {};
+	struct AuxImg Img = {};
+	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
+
+	if (!!(r = gs_gui_nix_readimage(FName, &Img)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_nix_pixmap_from_rgb(
+		Disp, Visual, Window,
+		Img.mWidth, Img.mHeight,
+		Img.mData.data(), Img.mData.size(),
+		&Pix)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	ImgP.mName = Img.mName;
+	ImgP.mWidth = Img.mWidth;
+	ImgP.mHeight = Img.mHeight;
+	ImgP.mPix = Pix;
+
+	if (oImgP)
+		*oImgP = ImgP;
+
+clean:
+	if (!!r) {
+		if (Pix != GS_XLIB_XID_MAGIC_SENTINEL)
+			d_XFreePixmap(Disp, Pix);
+	}
+
+	return r;
+}
+
+Bool gs_gui_nix_threadfunc222_aux_predicate(Display *Disp, XEvent *Evt, XPointer Arg)
+{
+	return True;
+}
+
+void gs_gui_nix_threadfunc222(std::shared_ptr<AuxThreadFuncCtx2> Ctx2)
+{
+	int r = 0;
+
+	Window Win = GS_XLIB_XID_MAGIC_SENTINEL;
+	Display *Disp = NULL;
+	XEvent EvtSend = {};
+	XEvent Evt = {};
+	Bool HaveEvent = False;
+
+	{
+		std::lock_guard<std::mutex> Lock(Ctx2->mMutex);
+		Win = Ctx2->mWin;
+	}
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
 
-	Ev.xclient.type = ClientMessage;
-	Ev.xclient.window = Win;
-	Ev.xclient.message_type = d_XInternAtom(Disp, (char *) "DUMMY", False);
-	Ev.xclient.format = 8; /* data.b active */
-	memset(Ev.xclient.data.b, 0, sizeof Ev.xclient.data.b);
+	EvtSend.xclient.type = ClientMessage;
+	EvtSend.xclient.window = Win;
+	EvtSend.xclient.message_type = d_XInternAtom(Disp, (char *) "DUMMY", False);
+	EvtSend.xclient.format = 8; /* data.b active */
+	memset(EvtSend.xclient.data.b, 0, sizeof EvtSend.xclient.data.b);
+
+	d_XSelectInput(Disp, Win, StructureNotifyMask);
 
 	while (true) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 		if (!d_XSendEvent(Disp, Win, False, NoEventMask, &Ev))
 			GS_ERR_CLEAN(1);
 		d_XSync(Disp, False);
+
+		while ((HaveEvent = d_XCheckIfEvent(Disp, &Evt, gs_gui_nix_threadfunc222_aux_predicate, NULL))) {
+			switch (Evt.type)
+			{
+			case DestroyNotify:
+			{
+				if (Evt.window == Win)
+					GS_ERR_NO_CLEAN(0);
+			}
+			break;
+
+			default:
+				break;
+			}
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	}
 
+noclean:
+
 clean:
-	if (!!r)
-		assert(0);
+	{
+		std::lock_guard<std::mutex> Lock(Ctx2->mMutex);
+		Ctx2->mR = r;
+	}
 }
 
 int gs_gui_nix_threadfunc()
@@ -373,67 +489,97 @@ int gs_gui_nix_threadfunc()
 	int r = 0;
 
 	std::shared_ptr<std::thread> Thread;
+	std::shared_ptr<AuxThreadFuncCtx2> Ctx2;
 
 	Display *Disp = NULL;
-	int s = 0;
 	Window Win = 0;
-	XEvent Evt;
 
 	Visual *Visual = NULL;
+	struct AuxImgP Img0 = {};
 
-	Pixmap Pix = 0;
 	XGCValues GcValues = {};
-	GC Gc = 0;
+	GC Gc = nullptr;
 
-	struct AuxImg Img0 = {};
-
-	if (!!(r = gs_gui_nix_readimage("img2_8_8_.data", &Img0)))
-		GS_GOTO_CLEAN();
+	XEvent Evt = {};
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
 
 	s = d_XDefaultScreen(Disp);
 
-	Win = d_XCreateSimpleWindow(Disp, d_XRootWindow(Disp, s), 10, 10, 400, 400, 10,
-		d_XBlackPixel(Disp, s), d_XWhitePixel(Disp, s));
+	Win = d_XCreateSimpleWindow(Disp, d_XRootWindow(Disp, d_XDefaultScreen(Disp)), 10, 10, 400, 400, 10,
+		d_XBlackPixel(Disp, d_XDefaultScreen(Disp)), d_XWhitePixel(Disp, d_XDefaultScreen(Disp)));
 
 	d_XSync(Disp, False);
 
-	Thread = std::shared_ptr<std::thread>(new std::thread(gs_gui_nix_threadfunc222, Win));
+	Ctx2 = std::shared_ptr<AuxThreadFuncCtx2>(new AuxThreadFuncCtx2());
+	Ctx2->mR = 0;
+	Ctx2->mWin = Win;
 
-	if (!!(r = gs_gui_nix_auxvisual(Disp, s, &Visual)))
+	Thread = std::shared_ptr<std::thread>(new std::thread(gs_gui_nix_threadfunc222, Ctx2));
+
+	if (!!(r = gs_gui_nix_auxvisual(Disp, d_XDefaultScreen(Disp), &Visual)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = gs_gui_nix_pixmap_from_rgb(
-		Disp, Visual, Win,
-		Img0.mWidth, Img0.mHeight,
-		Img0.mData.data(), Img0.mData.size(),
-		&Pix)))
+	if (!!(r = gs_gui_nix_readimage_p(
+		Disp, Visual, Window,
+		"img2_8_8_.data",
+		&Img0)))
 	{
 		GS_GOTO_CLEAN();
 	}
 
-	Gc = d_XCreateGC(Disp, Pix, 0, &GcValues);
+	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
 
-	d_XSelectInput(Disp, Win, ExposureMask);
+	d_XSelectInput(Disp, Win, ExposureMask | StructureNotifyMask);
 
 	d_XMapRaised(Disp, Win);
 
 	while (true) {
 		d_XNextEvent(Disp, &Evt);
 
-		if (Evt.type == Expose) {
+		switch (Evt.type)
+		{
+		case Expose:
+		{
 			printf("Expose\n");
-			d_XCopyArea(Disp, Pix, Win, Gc, 0, 0, 32, 32, 0, 0);
-		} else if (Evt.type == ClientMessage) {
+			d_XCopyArea(Disp, Img0.mPix, Win, Gc, 0, 0, 32, 32, 0, 0);
+		}
+		break;
+
+		case ClientMessage:
+		{
 			printf("ClientMessage\n");
+		}
+		break;
+
+		case DestroyNotify:
+		{
+			if (Evt.window == Win) {
+				Win = GS_XLIB_XID_MAGIC_SENTINEL;
+				GS_ERR_NO_CLEAN(0);
+			}
+		}
+		break;
+
+		default:
+			break;
 		}
 	}
 
-clean:
+noclean:
+
+clean :
+	if (Gc != nullptr)
+		d_XFreeGc(Disp, Gc);
+
+	if (Win != GS_XLIB_XID_MAGIC_SENTINEL)
+		d_XDestroyWindow(Disp, Win);
+
 	if (Disp)
 		d_XCloseDisplay(Disp);
+
+	Thread->join();
 
 	return r;
 }
