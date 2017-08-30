@@ -45,6 +45,8 @@ https://refspecs.linuxfoundation.org/LSB_3.1.0/LSB-Desktop-generic/LSB-Desktop-g
 
 #define GS_GUI_NIX_XLIB_NAME "libX11.so"
 
+#define GS_GUI_NIX_FRAMERATE 30
+
 struct AuxImg
 {
 	std::string mName;
@@ -73,7 +75,7 @@ typedef int       (* d_XCloseDisplay_t)(Display *display);
 typedef int       (* d_XDefaultScreen_t)(Display *display);
 typedef Window    (* d_XCreateSimpleWindow_t)(Display *display, Window parent, int x, int y,
 	unsigned int width, unsigned int height, unsigned int border_width, unsigned long border, unsigned long background);
-typedef int       (* d_XDestroyWindow_t)(Display *display, Window w)
+typedef int       (* d_XDestroyWindow_t)(Display *display, Window w);
 typedef Window    (* d_XRootWindow_t)(Display *display, int screen_number);
 typedef unsigned long(* d_XBlackPixel_t)(Display *display, int screen_number);
 typedef unsigned long(* d_XWhitePixel_t)(Display *display, int screen_number);
@@ -83,6 +85,7 @@ typedef Bool      (* d_XCheckIfEvent_t)(Display *display, XEvent *event_return, 
 typedef XImage *  (* d_XCreateImage_t)(Display *display, Visual *visual, unsigned int
 	depth, int format, int offset, char *data, unsigned int width,
 	unsigned int height, int bitmap_pad, int bytes_per_line);
+typedef int       (* d_XDestroyImage_t)(XImage *ximage);
 typedef Status    (* d_XMatchVisualInfo_t)(Display *display, int screen, int depth, int
 	klass, XVisualInfo *vinfo_return);
 typedef Pixmap    (* d_XCreatePixmap_t)(Display *display, Drawable d, unsigned int width,
@@ -103,7 +106,10 @@ typedef int       (* d_XSync_t)(Display *display, Bool discard);
 typedef Status    (* d_XSendEvent_t)(Display *display, Window w, Bool propagate, long
 	event_mask, XEvent *event_send);
 typedef Status    (* d_XInitThreads_t)(void);
-typedef int       (* d_XDestroyImage_t)(XImage *ximage);
+typedef Status    (* d_XSetWMProtocols_t)(Display *display, Window w, Atom *protocols, int count);
+/* upboat if you have no what the copy pasted declaration below means - thanks stackoverflow */
+typedef int       (* (* d_XSetErrorHandler_t)(int (* handler)(Display *, XErrorEvent *)))();
+typedef int       (* (* d_XSetIOErrorHandler_t)(int (* handler)(Display *)))();
 
 void *XlibHandle = NULL;
 
@@ -132,6 +138,9 @@ d_XInternAtom_t         d_XInternAtom;
 d_XSync_t               d_XSync;
 d_XSendEvent_t          d_XSendEvent;
 d_XInitThreads_t        d_XInitThreads;
+d_XSetWMProtocols_t     d_XSetWMProtocols;
+d_XSetErrorHandler_t    d_XSetErrorHandler;
+d_XSetIOErrorHandler_t  d_XSetIOErrorHandler;
 
 static int gs_gui_nix_xxlibinit();
 
@@ -193,6 +202,12 @@ int gs_gui_nix_xlibinit()
 	if (!(d_XSendEvent = (d_XSendEvent_t)dlsym(Handle, "XSendEvent")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XInitThreads = (d_XInitThreads_t)dlsym(Handle, "XInitThreads")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XSetWMProtocols = (d_XSetWMProtocols_t)dlsym(Handle, "XSetWMProtocols")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XSetErrorHandler = (d_XSetErrorHandler_t)dlsym(Handle, "XSetErrorHandler")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XSetIOErrorHandler = (d_XSetIOErrorHandler_t)dlsym(Handle, "XSetIOErrorHandler")))
 		GS_ERR_CLEAN(1);
 
 	/* XInitThreads is an API of notoriously poor design.
@@ -317,7 +332,7 @@ clean:
 	}
 
 	if (Gc != nullptr)
-		d_XFreeGc(Disp, Gc);
+		d_XFreeGC(Disp, Gc);
 	if (Img)
 		d_XDestroyImage(Img);
 	if (DataCpy)
@@ -426,108 +441,56 @@ Bool gs_gui_nix_threadfunc222_aux_predicate(Display *Disp, XEvent *Evt, XPointer
 	return True;
 }
 
-void gs_gui_nix_threadfunc222(std::shared_ptr<AuxThreadFuncCtx2> Ctx2)
-{
-	int r = 0;
-
-	Window Win = GS_XLIB_XID_MAGIC_SENTINEL;
-	Display *Disp = NULL;
-	XEvent EvtSend = {};
-	XEvent Evt = {};
-	Bool HaveEvent = False;
-
-	{
-		std::lock_guard<std::mutex> Lock(Ctx2->mMutex);
-		Win = Ctx2->mWin;
-	}
-
-	if (!(Disp = d_XOpenDisplay(NULL)))
-		GS_ERR_CLEAN(1);
-
-	EvtSend.xclient.type = ClientMessage;
-	EvtSend.xclient.window = Win;
-	EvtSend.xclient.message_type = d_XInternAtom(Disp, (char *) "DUMMY", False);
-	EvtSend.xclient.format = 8; /* data.b active */
-	memset(EvtSend.xclient.data.b, 0, sizeof EvtSend.xclient.data.b);
-
-	d_XSelectInput(Disp, Win, StructureNotifyMask);
-
-	while (true) {
-		if (!d_XSendEvent(Disp, Win, False, NoEventMask, &Ev))
-			GS_ERR_CLEAN(1);
-		d_XSync(Disp, False);
-
-		while ((HaveEvent = d_XCheckIfEvent(Disp, &Evt, gs_gui_nix_threadfunc222_aux_predicate, NULL))) {
-			switch (Evt.type)
-			{
-			case DestroyNotify:
-			{
-				if (Evt.window == Win)
-					GS_ERR_NO_CLEAN(0);
-			}
-			break;
-
-			default:
-				break;
-			}
-		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-	}
-
-noclean:
-
-clean:
-	{
-		std::lock_guard<std::mutex> Lock(Ctx2->mMutex);
-		Ctx2->mR = r;
-	}
-}
-
 int gs_gui_nix_threadfunc()
 {
 	int r = 0;
 
-	std::shared_ptr<std::thread> Thread;
-	std::shared_ptr<AuxThreadFuncCtx2> Ctx2;
+	int FrameDurationMsec = 1000 / GS_GUI_NIX_FRAMERATE;
 
 	Display *Disp = NULL;
 	Window Win = 0;
 
+	Atom wmDeleteWindow = {};
+
 	Visual *Visual = NULL;
 	struct AuxImgP Img0 = {};
+	struct AuxImgP ImgPbEmpty = {};
+	struct AuxImgP ImgPbFull = {};
 
 	XGCValues GcValues = {};
 	GC Gc = nullptr;
 
+	Bool HaveEvent = False;
 	XEvent Evt = {};
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
 
-	s = d_XDefaultScreen(Disp);
-
-	Win = d_XCreateSimpleWindow(Disp, d_XRootWindow(Disp, d_XDefaultScreen(Disp)), 10, 10, 400, 400, 10,
+	wmDeleteWindow = d_XInternAtom(Disp, (char *) "WM_DELETE_WINDOW", False);
+	
+	Win = d_XCreateSimpleWindow(Disp, d_XRootWindow(Disp, d_XDefaultScreen(Disp)), 10, 10, 400, 200, 10,
 		d_XBlackPixel(Disp, d_XDefaultScreen(Disp)), d_XWhitePixel(Disp, d_XDefaultScreen(Disp)));
 
 	d_XSync(Disp, False);
 
-	Ctx2 = std::shared_ptr<AuxThreadFuncCtx2>(new AuxThreadFuncCtx2());
-	Ctx2->mR = 0;
-	Ctx2->mWin = Win;
-
-	Thread = std::shared_ptr<std::thread>(new std::thread(gs_gui_nix_threadfunc222, Ctx2));
+	if (! d_XSetWMProtocols(Disp, Win, &wmDeleteWindow, 1))
+	  GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_auxvisual(Disp, d_XDefaultScreen(Disp), &Visual)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_readimage_p(
-		Disp, Visual, Window,
+		Disp, Visual, Win,
 		"img2_8_8_.data",
 		&Img0)))
 	{
 		GS_GOTO_CLEAN();
 	}
+
+	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbempty_384_32_.data", &ImgPbEmpty)))
+	    GS_GOTO_CLEAN();
+	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
+	    GS_GOTO_CLEAN();
 
 	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
 
@@ -536,8 +499,14 @@ int gs_gui_nix_threadfunc()
 	d_XMapRaised(Disp, Win);
 
 	while (true) {
-		d_XNextEvent(Disp, &Evt);
-
+	  static int Cnt00 = -1;
+	  Cnt00++; Cnt00 = Cnt00 % 100;
+	  float Ratio = Cnt00 / 100.0;
+	  auto TimePointStart = std::chrono::system_clock::now();
+	  while ((HaveEvent = d_XCheckIfEvent(
+	      Disp, &Evt,
+	      (Bool (*)()) gs_gui_nix_threadfunc222_aux_predicate, NULL)))
+	  {
 		switch (Evt.type)
 		{
 		case Expose:
@@ -549,29 +518,39 @@ int gs_gui_nix_threadfunc()
 
 		case ClientMessage:
 		{
+		  if (Evt.xclient.data.l[0] == wmDeleteWindow) {
+		    printf("ClientMessage Delete\n");
+		    d_XDestroyWindow(Disp, Win);
+		    Win = GS_XLIB_XID_MAGIC_SENTINEL;
+		  }
+		  else {
 			printf("ClientMessage\n");
+		  }
 		}
 		break;
 
 		case DestroyNotify:
 		{
-			if (Evt.window == Win) {
-				Win = GS_XLIB_XID_MAGIC_SENTINEL;
-				GS_ERR_NO_CLEAN(0);
-			}
+		  GS_ERR_NO_CLEAN(0);
 		}
 		break;
 
 		default:
 			break;
 		}
+          }
+
+	  d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
+	  d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+
+	  std::this_thread::sleep_until(TimePointStart + std::chrono::milliseconds(FrameDurationMsec));
 	}
 
 noclean:
 
 clean :
 	if (Gc != nullptr)
-		d_XFreeGc(Disp, Gc);
+		d_XFreeGC(Disp, Gc);
 
 	if (Win != GS_XLIB_XID_MAGIC_SENTINEL)
 		d_XDestroyWindow(Disp, Win);
@@ -579,9 +558,17 @@ clean :
 	if (Disp)
 		d_XCloseDisplay(Disp);
 
-	Thread->join();
-
 	return r;
+}
+
+int gs_xlib_error_handler(Display *Disp, XErrorEvent *Evt)
+{
+  printf("err\n");
+}
+
+int gs_xlib_ioerror_handler(Display *Disp)
+{
+  printf("ioerr\n");
 }
 
 int gs_gui_run()
@@ -591,6 +578,9 @@ int gs_gui_run()
 	if (!!(r = gs_gui_nix_xlibinit()))
 		GS_GOTO_CLEAN();
 
+	d_XSetErrorHandler(gs_xlib_error_handler);
+	d_XSetIOErrorHandler(gs_xlib_ioerror_handler);
+	
 	if (!!(r = gs_gui_nix_threadfunc()))
 		GS_GOTO_CLEAN();
 
