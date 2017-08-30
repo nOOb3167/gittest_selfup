@@ -268,6 +268,10 @@ int main(int argc, char **argv)
 	if (!!(r = gs_config_create_common_logs(ConfMap)))
 		GS_GOTO_CLEAN();
 
+	int gs_gui_run();
+	gs_gui_run();
+	GS_ERR_CLEAN(1);
+
 	if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_VERSUB) == 0) {
 		printf(GS_CONFIG_DEFS_GITTEST_EV2_SELFUPDATE_VERSUB);
 		GS_ERR_NO_CLEAN(0);
