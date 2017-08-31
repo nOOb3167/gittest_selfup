@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <gittest/misc.h>
+#include <gittest/log.h>
 
 /*
 https://en.wikibooks.org/wiki/X_Window_Programming/Xlib#Example
@@ -63,11 +64,9 @@ struct AuxImgP
 	Pixmap mPix;
 };
 
-struct AuxThreadFuncCtx2
+struct GsGuiProgress
 {
-	std::mutex mMutex;
-	int mR;
-	Window mWin;
+  struct GsLogBase *mProgressHintLog;
 };
 
 typedef Display * (* d_XOpenDisplay_t)(char *display_name);
@@ -142,7 +141,11 @@ d_XSetWMProtocols_t     d_XSetWMProtocols;
 d_XSetErrorHandler_t    d_XSetErrorHandler;
 d_XSetIOErrorHandler_t  d_XSetIOErrorHandler;
 
-static int gs_gui_nix_xxlibinit();
+int gs_gui_progress_destroy(struct GsGuiProgress *Progress)
+{
+  GS_DELETE(&Progress, GsGuiProgress);
+  return 0;
+}
 
 int gs_gui_nix_xlibinit()
 {
@@ -436,6 +439,59 @@ clean:
 	return r;
 }
 
+int gs_gui_nix_draw_update(struct GsGuiProgress *Progress)
+{
+  int r = 0;
+
+  static struct GsLogBase *Ll = GS_LOG_GET("progress_hint");
+
+  char *DumpBuf = NULL;
+  char *TmpBuf = NULL;
+  size_t LenDump = 0;
+
+  GsLogCrashHandlerDumpBufData Data = {};
+
+  std::vector<std::string> Msg;
+  char MsgHead[] = "[progress_hint] [";
+
+  { log_guard_t Log(Ll); GS_LOG(I, S, "zero"); }
+
+  if (!(DumpBuf = (char *) malloc(GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES)))
+    GS_ERR_CLEAN(1);
+  if (!(TmpBuf = (char *) malloc(GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES)))
+    GS_ERR_CLEAN(1);
+  LenDump = GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES;
+
+  Data.Tripwire = GS_TRIPWIRE_LOG_CRASH_HANDLER_DUMP_BUF_DATA;
+  Data.Buf = DumpBuf;
+  Data.MaxWritePos = GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES;
+  Data.CurrentWritePos = 0;
+  Data.IsOverflow = 0;
+
+  if (!!(r = gs_log_dump_lowlevel(Ll, &Data, gs_log_crash_handler_dump_buf_cb)))
+    GS_GOTO_CLEAN();
+
+  for (const char *Ptr = DumpBuf, *Ptr2 = DumpBuf, *End = DumpBuf + Data.CurrentWritePos;
+       Ptr < End;
+       Ptr = (Ptr2 += 1))
+  {
+    while (Ptr2 < End && *Ptr2 != '\n')
+      Ptr2++;
+    Msg.push_back(std::string(Ptr, Ptr2));
+  }
+
+  assert(Msg[0].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
+  /* [^]]]: [^x] - negated scanset of x (here x is']'), finally match ']' */
+  if (2 != sscanf(Msg[0].data(), "[progress_hint] [%[^]]]: [%[^]]]", TmpBuf, TmpBuf))
+    GS_ERR_CLEAN(1);
+
+clean:
+  if (DumpBuf)
+    free(DumpBuf);
+
+  return r;
+}
+
 Bool gs_gui_nix_threadfunc222_aux_predicate(Display *Disp, XEvent *Evt, XPointer Arg)
 {
 	return True;
@@ -447,8 +503,10 @@ int gs_gui_nix_threadfunc()
 
 	int FrameDurationMsec = 1000 / GS_GUI_NIX_FRAMERATE;
 
+	struct GsGuiProgress *Progress = NULL;
+
 	Display *Disp = NULL;
-	Window Win = 0;
+	Window Win = GS_XLIB_XID_MAGIC_SENTINEL;
 
 	Atom wmDeleteWindow = {};
 
@@ -462,6 +520,10 @@ int gs_gui_nix_threadfunc()
 
 	Bool HaveEvent = False;
 	XEvent Evt = {};
+
+	Progress = new GsGuiProgress();
+	if (! (Progress->mProgressHintLog = GS_LOG_GET("progress_hint")))
+	  GS_ERR_CLEAN(1);
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
@@ -540,6 +602,9 @@ int gs_gui_nix_threadfunc()
 		}
           }
 
+	  if (!!(r = gs_gui_nix_draw_update(Progress)))
+	    GS_GOTO_CLEAN();
+
 	  d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
 	  d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
 
@@ -557,6 +622,8 @@ clean :
 
 	if (Disp)
 		d_XCloseDisplay(Disp);
+
+	GS_DELETE_F(&Progress, gs_gui_progress_destroy);
 
 	return r;
 }
