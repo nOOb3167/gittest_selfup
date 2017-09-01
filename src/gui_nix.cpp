@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <random>
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
@@ -67,8 +68,9 @@ struct AuxImgP
 struct GsGuiProgress
 {
   struct GsLogBase *mProgressHintLog;
-  int mMode; /* 0:ratio */
+  int mMode; /* 0:ratio 1:blip */
   int mRatioA, mRatioB;
+  int mBlipValOld, mBlipVal, mBlipCnt;
 };
 
 typedef Display * (* d_XOpenDisplay_t)(char *display_name);
@@ -479,13 +481,26 @@ int gs_gui_nix_draw_update(struct GsGuiProgress *Progress)
     Msg.push_back(std::string(Ptr, Ptr2));
   }
 
-  assert(Msg[Msg.size() - 1].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
-  /* [^]]]: [^x] - negated scanset of x (here x is']'), finally match ']' */
-  if (1 != sscanf(Msg[Msg.size() - 1].data(), "[progress_hint] [%*[^]]]: [%[^]]]", TmpBuf))
-    GS_ERR_CLEAN(1);
-  if (2 != sscanf(TmpBuf, "RATIO %d OF %d", &Progress->mRatioA, &Progress->mRatioB))
-    GS_ERR_CLEAN(1);
-  Progress->mMode = 0; /*ratio*/
+  {
+    size_t Last = Msg.size() - 1;
+    if (Msg.empty())
+      GS_ERR_NO_CLEAN(0);
+    GS_ASSERT(Msg[Last].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
+    /* [^]]]: [^x] - negated scanset of x (here x is']'), finally match ']' */
+    if (1 != sscanf(Msg[Last].c_str(), "[progress_hint] [%*[^]]]: [%[^]]]", TmpBuf))
+      GS_ERR_CLEAN(1);
+    if (2 == sscanf(TmpBuf, "RATIO %d OF %d", &Progress->mRatioA, &Progress->mRatioB)) {
+      Progress->mMode = 0; /*ratio*/
+    }
+    else if (1 == sscanf(TmpBuf, "BLIP %d", &Progress->mBlipVal)) {
+      Progress->mMode = 1; /*blip*/
+    }
+    else {
+      GS_ERR_CLEAN(1);
+    }
+  }
+
+noclean:
 
 clean:
   if (DumpBuf)
@@ -530,6 +545,7 @@ int gs_gui_nix_threadfunc()
 	  GS_ERR_CLEAN(1);
 	Progress->mMode = 0; /*ratio*/
 	Progress->mRatioA = 0; Progress->mRatioB = 0;
+	Progress->mBlipValOld = 0; Progress->mBlipVal = 0; Progress->mBlipCnt = -1;
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
@@ -569,7 +585,9 @@ int gs_gui_nix_threadfunc()
 	while (true) {
 	  static int Cnt00 = -1;
 	  Cnt00++; Cnt00 = Cnt00 % 100;
-	  { log_guard_t Log(Ll); GS_LOG(I, PF, "RATIO %d OF %d", Cnt00, 100); }
+	  static std::default_random_engine RandomEngine;
+	  //{ log_guard_t Log(Ll); GS_LOG(I, PF, "RATIO %d OF %d", Cnt00, 100); }
+	  { log_guard_t Log(Ll); GS_LOG(I, PF, "BLIP %d", (int) RandomEngine()); }
 	  auto TimePointStart = std::chrono::system_clock::now();
 	  while ((HaveEvent = d_XCheckIfEvent(
 	      Disp, &Evt,
@@ -619,6 +637,19 @@ int gs_gui_nix_threadfunc()
 	    if (Progress->mRatioB)
 	      Ratio = (float) Progress->mRatioA / Progress->mRatioB;
 
+	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
+	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+	  }
+	  break;
+
+	  case 1:
+	  {
+	    float Ratio = 0.0f;
+	    if (Progress->mBlipValOld != Progress->mBlipVal) {
+	      Progress->mBlipValOld = Progress->mBlipVal;
+	      Progress->mBlipCnt++;
+	    }
+	    Ratio = (float) (Progress->mBlipCnt % 100) / 100;
 	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
 	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
 	  }
