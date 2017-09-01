@@ -67,6 +67,8 @@ struct AuxImgP
 struct GsGuiProgress
 {
   struct GsLogBase *mProgressHintLog;
+  int mMode; /* 0:ratio */
+  int mRatioA, mRatioB;
 };
 
 typedef Display * (* d_XOpenDisplay_t)(char *display_name);
@@ -452,9 +454,6 @@ int gs_gui_nix_draw_update(struct GsGuiProgress *Progress)
   GsLogCrashHandlerDumpBufData Data = {};
 
   std::vector<std::string> Msg;
-  char MsgHead[] = "[progress_hint] [";
-
-  { log_guard_t Log(Ll); GS_LOG(I, S, "zero"); }
 
   if (!(DumpBuf = (char *) malloc(GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES)))
     GS_ERR_CLEAN(1);
@@ -480,10 +479,13 @@ int gs_gui_nix_draw_update(struct GsGuiProgress *Progress)
     Msg.push_back(std::string(Ptr, Ptr2));
   }
 
-  assert(Msg[0].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
+  assert(Msg[Msg.size() - 1].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
   /* [^]]]: [^x] - negated scanset of x (here x is']'), finally match ']' */
-  if (2 != sscanf(Msg[0].data(), "[progress_hint] [%[^]]]: [%[^]]]", TmpBuf, TmpBuf))
+  if (1 != sscanf(Msg[Msg.size() - 1].data(), "[progress_hint] [%*[^]]]: [%[^]]]", TmpBuf))
     GS_ERR_CLEAN(1);
+  if (2 != sscanf(TmpBuf, "RATIO %d OF %d", &Progress->mRatioA, &Progress->mRatioB))
+    GS_ERR_CLEAN(1);
+  Progress->mMode = 0; /*ratio*/
 
 clean:
   if (DumpBuf)
@@ -500,6 +502,8 @@ Bool gs_gui_nix_threadfunc222_aux_predicate(Display *Disp, XEvent *Evt, XPointer
 int gs_gui_nix_threadfunc()
 {
 	int r = 0;
+
+	static struct GsLogBase *Ll = GS_LOG_GET("progress_hint");
 
 	int FrameDurationMsec = 1000 / GS_GUI_NIX_FRAMERATE;
 
@@ -524,6 +528,8 @@ int gs_gui_nix_threadfunc()
 	Progress = new GsGuiProgress();
 	if (! (Progress->mProgressHintLog = GS_LOG_GET("progress_hint")))
 	  GS_ERR_CLEAN(1);
+	Progress->mMode = 0; /*ratio*/
+	Progress->mRatioA = 0; Progress->mRatioB = 0;
 
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
@@ -563,7 +569,7 @@ int gs_gui_nix_threadfunc()
 	while (true) {
 	  static int Cnt00 = -1;
 	  Cnt00++; Cnt00 = Cnt00 % 100;
-	  float Ratio = Cnt00 / 100.0;
+	  { log_guard_t Log(Ll); GS_LOG(I, PF, "RATIO %d OF %d", Cnt00, 100); }
 	  auto TimePointStart = std::chrono::system_clock::now();
 	  while ((HaveEvent = d_XCheckIfEvent(
 	      Disp, &Evt,
@@ -605,8 +611,22 @@ int gs_gui_nix_threadfunc()
 	  if (!!(r = gs_gui_nix_draw_update(Progress)))
 	    GS_GOTO_CLEAN();
 
-	  d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
-	  d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+	  switch (Progress->mMode)
+	  {
+	  case 0:
+	  {
+	    float Ratio = 0.0f;
+	    if (Progress->mRatioB)
+	      Ratio = (float) Progress->mRatioA / Progress->mRatioB;
+
+	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
+	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+	  }
+	  break;
+
+	  default:
+	    GS_ASSERT(0);
+	  }
 
 	  std::this_thread::sleep_until(TimePointStart + std::chrono::milliseconds(FrameDurationMsec));
 	}
