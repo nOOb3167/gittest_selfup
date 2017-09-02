@@ -527,6 +527,7 @@ int gs_gui_nix_threadfunc()
 	Display *Disp = NULL;
 	Window Win = GS_XLIB_XID_MAGIC_SENTINEL;
 
+	Atom wmProtocols = {};
 	Atom wmDeleteWindow = {};
 
 	Visual *Visual = NULL;
@@ -550,6 +551,7 @@ int gs_gui_nix_threadfunc()
 	if (!(Disp = d_XOpenDisplay(NULL)))
 		GS_ERR_CLEAN(1);
 
+	wmProtocols = d_XInternAtom(Disp, (char *) "WM_PROTOCOLS", False);
 	wmDeleteWindow = d_XInternAtom(Disp, (char *) "WM_DELETE_WINDOW", False);
 	
 	Win = d_XCreateSimpleWindow(Disp, d_XRootWindow(Disp, d_XDefaultScreen(Disp)), 10, 10, 400, 200, 10,
@@ -604,8 +606,15 @@ int gs_gui_nix_threadfunc()
 
 		case ClientMessage:
 		{
-		  if (Evt.xclient.data.l[0] == wmDeleteWindow) {
-		    printf("ClientMessage Delete\n");
+			/* https://tronche.com/gui/x/icccm/sec-4.html#s-4.2.8
+			   https://tronche.com/gui/x/icccm/sec-4.html#s-4.2.8.1
+			     XEvents containing ClientMessage of WM_PROTOCOLS (ex WM_DELETE_WINDOW)
+				 by 'type' field is meant 'message_type' of XClientMessageEvent */
+		  if (Evt.xclient.message_type == wmProtocols &&
+			  Evt.xclient.format == 32 &&
+			  Evt.xclient.data.l[0] == wmDeleteWindow)
+		  {
+		    printf("ClientMessage WM_PROTOCOLS WM_DELETE_WINDOW\n");
 		    d_XDestroyWindow(Disp, Win);
 		    Win = GS_XLIB_XID_MAGIC_SENTINEL;
 		  }
