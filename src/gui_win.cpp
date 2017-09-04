@@ -97,7 +97,7 @@ int gs_gui_win_bitmap_draw(
 
 	hObjectOld = SelectObject(hDc2, hBitmap);
 
-	if (! BitBlt(hDc, x, y, Bitmap.bmWidth, Bitmap.bmHeight, hDc2, 0, 0, SRCCOPY))
+	if (! TransparentBlt(hDc, x, y, Bitmap.bmWidth, Bitmap.bmHeight, hDc2, 0, 0, Bitmap.bmWidth, Bitmap.bmHeight, 0x00FFFF))
 		GS_ERR_CLEAN(1);
 
 clean:
@@ -125,9 +125,16 @@ LRESULT CALLBACK WndProc(HWND Hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 		for (size_t y = 0; y < 64; y++)
 			for (size_t x = 0; x < 64; x++) {
-				D[64 * 3 * y + 3 * x + 0] = 0x00;
-				D[64 * 3 * y + 3 * x + 1] = 0xFF;
-				D[64 * 3 * y + 3 * x + 2] = 0xFF;
+				if ((x / 8) % 3 == 0 && (y / 8) % 3 == 0) {
+					D[64 * 3 * y + 3 * x + 0] = 0x00;
+					D[64 * 3 * y + 3 * x + 1] = 0xFF;
+					D[64 * 3 * y + 3 * x + 2] = 0xFF;
+				}
+				else {
+					D[64 * 3 * y + 3 * x + 0] = 0x00;
+					D[64 * 3 * y + 3 * x + 1] = 0x00;
+					D[64 * 3 * y + 3 * x + 2] = 0xFF;
+				}
 			}
 
 		if (!(hDc = GetDC(Hwnd)))

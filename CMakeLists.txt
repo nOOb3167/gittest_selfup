@@ -40,6 +40,8 @@ IF (WIN32)
     ${LIBEVENT_LIBRARIES}
     # ZLIB must be on the link list AFTER LibGit2 to resolve symbols
     ${ZLIB_LIBRARIES}
+    # FIXME:
+    Msimg32
   )
 ELSEIF (UNIX)
   # search for all needed packages
