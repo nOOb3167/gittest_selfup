@@ -93,6 +93,9 @@ typedef Status    (* d_XMatchVisualInfo_t)(Display *display, int screen, int dep
 	klass, XVisualInfo *vinfo_return);
 typedef Pixmap    (* d_XCreatePixmap_t)(Display *display, Drawable d, unsigned int width,
 	unsigned int height, unsigned int depth);
+typedef Pixmap    (* d_XCreatePixmapFromBitmapData_t)(Display *display, Drawable d, char
+              *data, unsigned int width, unsigned int height, unsigned long
+              fg, unsigned long bg, unsigned int depth);
 typedef int       (* d_XFreePixmap_t)(Display *display, Pixmap pixmap);
 typedef GC        (* d_XCreateGC_t)(Display *display, Drawable d, unsigned long valuemask,
 	XGCValues *values);
@@ -103,6 +106,8 @@ typedef int       (* d_XPutImage_t)(Display *display, Drawable d, GC gc, XImage 
 typedef int       (* d_XCopyArea_t)(Display *display, Drawable src, Drawable dest, GC gc, int
 	src_x, int src_y, unsigned int width, unsigned height, int
 	dest_x, int dest_y);
+typedef int       (* d_XSetClipOrigin_t)(Display *display, GC gc, int clip_x_origin, int clip_y_origin);
+typedef int       (* d_XSetClipMask_t)(Display *display, GC gc, Pixmap pixmap);
 typedef int       (* d_XSelectInput_t)(Display *display, Window w, long event_mask);
 typedef Atom      (* d_XInternAtom_t)(Display *display, char *atom_name, Bool only_if_exists);
 typedef int       (* d_XSync_t)(Display *display, Bool discard);
@@ -131,11 +136,14 @@ d_XCreateImage_t        d_XCreateImage;
 d_XDestroyImage_t       d_XDestroyImage;
 d_XMatchVisualInfo_t    d_XMatchVisualInfo;
 d_XCreatePixmap_t       d_XCreatePixmap;
+d_XCreatePixmapFromBitmapData_t d_XCreatePixmapFromBitmapData;
 d_XFreePixmap_t         d_XFreePixmap;
 d_XCreateGC_t           d_XCreateGC;
 d_XFreeGC_t             d_XFreeGC;
 d_XPutImage_t           d_XPutImage;
 d_XCopyArea_t           d_XCopyArea;
+d_XSetClipOrigin_t      d_XSetClipOrigin;
+d_XSetClipMask_t        d_XSetClipMask;
 d_XSelectInput_t        d_XSelectInput;
 d_XInternAtom_t         d_XInternAtom;
 d_XSync_t               d_XSync;
@@ -190,6 +198,8 @@ int gs_gui_nix_xlibinit()
 		GS_ERR_CLEAN(1);
 	if (!(d_XCreatePixmap = (d_XCreatePixmap_t)dlsym(Handle, "XCreatePixmap")))
 		GS_ERR_CLEAN(1);
+	if (!(d_XCreatePixmapFromBitmapData = (d_XCreatePixmapFromBitmapData_t)dlsym(Handle, "XCreatePixmapFromBitmapData")))
+		GS_ERR_CLEAN(1);
 	if (!(d_XFreePixmap = (d_XFreePixmap_t)dlsym(Handle, "XFreePixmap")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XCreateGC = (d_XCreateGC_t)dlsym(Handle, "XCreateGC")))
@@ -199,6 +209,10 @@ int gs_gui_nix_xlibinit()
 	if (!(d_XPutImage = (d_XPutImage_t)dlsym(Handle, "XPutImage")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XCopyArea = (d_XCopyArea_t)dlsym(Handle, "XCopyArea")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XSetClipOrigin = (d_XSetClipOrigin_t)dlsym(Handle, "XSetClipOrigin")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XSetClipMask = (d_XSetClipMask_t)dlsym(Handle, "XSetClipMask")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XSelectInput = (d_XSelectInput_t)dlsym(Handle, "XSelectInput")))
 		GS_ERR_CLEAN(1);
@@ -348,6 +362,68 @@ clean:
 	return r;
 }
 
+int gs_gui_nix_pixmap_mask_color_from_rgb(
+	Display *Disp, Window Win,
+	int Width, int Height,
+	const char *ImgDataBuf, size_t LenImgData,
+	unsigned long MaskColorBGR,
+	Pixmap *oPix)
+{
+  int r = 0;
+
+  Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
+
+  char *DataCpy = NULL;
+  
+  int BitNum = Width * Height;
+  int ByteNum = (BitNum + 7) / 8;
+  
+  if (LenImgData != Width * Height * 3)
+    GS_ERR_CLEAN(1);
+
+  if (!(DataCpy = (char *)malloc(ByteNum)))
+    GS_ERR_CLEAN(1);
+
+	for (size_t y = 0; y < Height; y++)
+		for (size_t x = 0; x < Width; x++) {
+		  char R = ImgDataBuf[y * Width * 3 + x * 3 + 0];
+		  char G = ImgDataBuf[y * Width * 3 + x * 3 + 1];
+		  char B = ImgDataBuf[y * Width * 3 + x * 3 + 2];
+		  unsigned long ImgColorBGR = (B & 0xFF) + ((G & 0xFF) << 8) + ((R & 0xFF) << 16);
+		  bool Masked = ImgColorBGR == MaskColorBGR;
+		  int Bit = y * Width + x;
+		  int Byte = Bit / 8;
+		  int ByteBit = Bit % 8;
+		  /* want 0 in mask for MaskColor matching pixels, 1 for others */
+		  if (Masked)
+		    DataCpy[Byte] = DataCpy[Byte] & (~(1 << ByteBit));
+		  else
+		    DataCpy[Byte] = DataCpy[Byte] | (1 << ByteBit);
+		}
+
+	// FIXME: default screen assumed
+	Pix = d_XCreatePixmapFromBitmapData(
+	  Disp, Win,
+	  DataCpy,
+	  Width, Height,
+	  d_XWhitePixel(Disp, d_XDefaultScreen(Disp)), d_XBlackPixel(Disp, d_XDefaultScreen(Disp)),
+	  1);
+
+       if (oPix)
+	 *oPix = Pix;
+
+clean:
+       if (!!r) {
+	 if (Pix != GS_XLIB_XID_MAGIC_SENTINEL)
+	   d_XFreePixmap(Disp, Pix);
+       }
+
+       if (DataCpy)
+	 free(DataCpy);
+
+  return r;
+}
+
 int gs_gui_nix_readfile(
 	const std::string &FName,
 	std::string *oData)
@@ -421,6 +497,49 @@ int gs_gui_nix_readimage_p(
 		Disp, Visual, Window,
 		Img.mWidth, Img.mHeight,
 		Img.mData.data(), Img.mData.size(),
+		&Pix)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	ImgP.mName = Img.mName;
+	ImgP.mWidth = Img.mWidth;
+	ImgP.mHeight = Img.mHeight;
+	ImgP.mPix = Pix;
+
+	if (oImgP)
+		*oImgP = ImgP;
+
+clean:
+	if (!!r) {
+		if (Pix != GS_XLIB_XID_MAGIC_SENTINEL)
+			d_XFreePixmap(Disp, Pix);
+	}
+
+	return r;
+}
+
+int gs_gui_nix_readimage_mask_p(
+	Display *Disp, Window Win,
+	const std::string &FName,
+	unsigned long MaskColorBGR,
+	struct AuxImgP *oImgP)
+{
+	int r = 0;
+
+	struct AuxImgP ImgP = {};
+
+	struct AuxImg Img = {};
+	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
+
+	if (!!(r = gs_gui_nix_readimage(FName, &Img)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_nix_pixmap_mask_color_from_rgb(
+		Disp, Win,
+		Img.mWidth, Img.mHeight,
+		Img.mData.data(), Img.mData.size(),
+		MaskColorBGR,
 		&Pix)))
 	{
 		GS_GOTO_CLEAN();
@@ -534,6 +653,7 @@ int gs_gui_nix_threadfunc()
 	struct AuxImgP Img0 = {};
 	struct AuxImgP ImgPbEmpty = {};
 	struct AuxImgP ImgPbFull = {};
+	struct AuxImgP ImgMask0 = {};
 
 	XGCValues GcValues = {};
 	GC Gc = nullptr;
@@ -577,6 +697,9 @@ int gs_gui_nix_threadfunc()
 	    GS_GOTO_CLEAN();
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
 	    GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", 0x00FF00, &ImgMask0)))
+	  GS_GOTO_CLEAN();
 
 	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
 
@@ -638,6 +761,9 @@ int gs_gui_nix_threadfunc()
 	  if (!!(r = gs_gui_nix_draw_update(Progress)))
 	    GS_GOTO_CLEAN();
 
+	  d_XSetClipOrigin(Disp, Gc, 0, 32);
+	  d_XSetClipMask(Disp, Gc, ImgMask0.mPix);
+	  
 	  switch (Progress->mMode)
 	  {
 	  case 0:
