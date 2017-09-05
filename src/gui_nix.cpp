@@ -562,7 +562,7 @@ clean:
 	return r;
 }
 
-int gs_gui_nix_draw_update(struct GsGuiProgress *Progress)
+int gs_gui_nix_progress_update(struct GsGuiProgress *Progress)
 {
   int r = 0;
 
@@ -758,7 +758,7 @@ int gs_gui_nix_threadfunc()
 		}
           }
 
-	  if (!!(r = gs_gui_nix_draw_update(Progress)))
+	  if (!!(r = gs_gui_nix_progress_update(Progress)))
 	    GS_GOTO_CLEAN();
 
 	  d_XSetClipOrigin(Disp, Gc, 0, 32);
