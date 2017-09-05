@@ -562,6 +562,30 @@ clean:
 	return r;
 }
 
+int gs_gui_nix_drawimage_mask_p(
+				Display *Disp, Drawable Dest, GC Gc,
+				struct AuxImgP *ImgMask,
+				struct AuxImgP *ImgDraw,
+				int SrcX, int SrcY,
+				int Width, int Height,
+				int DestX, int DestY)
+{
+  int r = 0;
+
+  GS_ASSERT(ImgMask->mWidth == ImgDraw->mWidth && ImgMask->mHeight == ImgDraw->mHeight);
+  
+  d_XSetClipOrigin(Disp, Gc, DestX, DestY);
+  d_XSetClipMask(Disp, Gc, ImgMask->mPix);
+
+  d_XCopyArea(Disp, ImgDraw->mPix, Dest, Gc, SrcX, SrcY, Width, Height, DestX, DestY);
+
+ clean:
+  
+  d_XSetClipMask(Disp, Gc, None);
+
+  return r;
+}
+
 int gs_gui_nix_progress_update(struct GsGuiProgress *Progress)
 {
   int r = 0;
@@ -761,8 +785,7 @@ int gs_gui_nix_threadfunc()
 	  if (!!(r = gs_gui_nix_progress_update(Progress)))
 	    GS_GOTO_CLEAN();
 
-	  d_XSetClipOrigin(Disp, Gc, 0, 32);
-	  d_XSetClipMask(Disp, Gc, ImgMask0.mPix);
+	  GS_ASSERT(!gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgMask0, &ImgPbFull, 0, 0, ImgPbFull.mWidth, ImgPbFull.mHeight, 0, 64));
 	  
 	  switch (Progress->mMode)
 	  {
