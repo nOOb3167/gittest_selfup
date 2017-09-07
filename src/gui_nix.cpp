@@ -590,6 +590,63 @@ int gs_gui_nix_drawimage_mask_p(
   return r;
 }
 
+int gs_gui_nix_draw_progress_ratio(
+  Display *Disp, Drawable Dest, GC Gc,
+  struct AuxImgP *ImgPbEmptyMask, struct AuxImgP *ImgPbEmpty,
+  struct AuxImgP *ImgPbFullMask, struct AuxImgP *ImgPbFull,
+  int DestX, int DestY,
+  int RatioA, int RatioB)
+{
+  int r = 0;
+
+  float Ratio = 0.0f;
+  if (RatioB)
+    Ratio = (float) RatioA / RatioB;
+  
+  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbEmptyMask, ImgPbEmpty, 0, 0, ImgPbEmpty->mWidth, ImgPbEmpty->mHeight, DestX, DestY)))
+    GS_GOTO_CLEAN();
+  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbFullMask, ImgPbFull, 0, 0, ImgPbFull->mWidth * Ratio, ImgPbFull->mHeight, DestX, DestY)))
+    GS_GOTO_CLEAN();
+
+ clean:
+
+  return r;
+}
+
+int gs_gui_nix_draw_progress_blip(
+  Display *Disp, Drawable Dest, GC Gc,
+  struct AuxImgP *ImgPbEmptyMask, struct AuxImgP *ImgPbEmpty,
+  struct AuxImgP *ImgPbBlipMask, struct AuxImgP *ImgPbBlip,
+  int DestX, int DestY,
+  int BlipCnt)
+{
+  int r = 0;
+
+  float Ratio = (float) (BlipCnt % 100) / 100;;
+  int PbLeft = 0;
+  int PbRight = 384;
+  int Pixel = ImgPbEmpty->mWidth * Ratio;
+  int SrcX = 0;
+  int DrawCenter = PbLeft + Pixel;
+  int DrawLeft = DrawCenter - (ImgPbBlip->mWidth / 2);
+  int DrawCut = GS_MAX(PbLeft - DrawLeft, 0);
+  SrcX = DrawCut;
+  DrawLeft += SrcX;
+  /* not the same as + (ImgPbBlip.mWidth / 2) due to divide truncation */
+  int DrawRight = DrawCenter + (ImgPbBlip->mWidth - (ImgPbBlip->mWidth / 2));
+  int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
+  int Widd = ImgPbBlip->mWidth - DrawCut2;
+
+  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbBlipMask, ImgPbBlip, SrcX, 0, Widd, ImgPbBlip->mHeight, DestX + DrawLeft, DestY)))
+    GS_GOTO_CLEAN();
+  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbEmptyMask, ImgPbEmpty, 0, 0, ImgPbEmpty->mWidth, ImgPbEmpty->mHeight, DestX, DestY)))
+    GS_GOTO_CLEAN();
+  
+ clean:
+
+  return r;
+}
+
 int gs_gui_nix_progress_update(struct GsGuiProgress *Progress)
 {
   int r = 0;
@@ -686,6 +743,7 @@ int gs_gui_nix_threadfunc()
 	struct AuxImgP ImgPbEmpty = {};
 	struct AuxImgP ImgPbEmptyMask = {};
 	struct AuxImgP ImgPbFull = {};
+	struct AuxImgP ImgPbFullMask = {};
 	struct AuxImgP ImgMask0 = {};
 	struct AuxImgP ImgPbBlip = {};
 	struct AuxImgP ImgPbBlipMask = {};
@@ -720,13 +778,8 @@ int gs_gui_nix_threadfunc()
 	if (!!(r = gs_gui_nix_auxvisual(Disp, d_XDefaultScreen(Disp), &Visual)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = gs_gui_nix_readimage_p(
-		Disp, Visual, Win,
-		"img2_8_8_.data",
-		&Img0)))
-	{
-		GS_GOTO_CLEAN();
-	}
+	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "img2_8_8_.data", &Img0)))
+	  GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbempty_384_32_.data", &ImgPbEmpty)))
 	    GS_GOTO_CLEAN();
@@ -734,6 +787,8 @@ int gs_gui_nix_threadfunc()
 	  GS_GOTO_CLEAN();
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
 	    GS_GOTO_CLEAN();
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbfull_384_32_.data", 0x00FF00, &ImgPbFullMask)))
+	  GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", 0x00FF00, &ImgMask0)))
 	  GS_GOTO_CLEAN();
@@ -811,39 +866,29 @@ int gs_gui_nix_threadfunc()
 	  {
 	  case 0:
 	  {
-	    float Ratio = 0.0f;
-	    if (Progress->mRatioB)
-	      Ratio = (float) Progress->mRatioA / Progress->mRatioB;
-
-	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
-	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+	    if (!!(r = gs_gui_nix_draw_progress_ratio(
+	      Disp, Win, Gc,
+	      &ImgPbEmptyMask, &ImgPbEmpty,
+	      &ImgPbFullMask, &ImgPbFull,
+	      0, 32,
+	      Progress->mRatioA, Progress->mRatioB)))
+	    {
+	      GS_GOTO_CLEAN();
+	    }
 	  }
 	  break;
 
 	  case 1:
 	  {
-	    float Ratio = (float) (Progress->mBlipCnt % 100) / 100;;
-	    int PbLeft = 0;
-	    int PbRight = 384;
-	    int Pixel = ImgPbEmpty.mWidth * Ratio;
-	    int SrcX = 0, SrcY = 0;
-	    int DrawCenter = PbLeft + Pixel;
-	    int DrawLeft = DrawCenter - (ImgPbBlip.mWidth / 2);
-	    int DrawCut = GS_MAX(PbLeft - DrawLeft, 0);
-	    SrcX = DrawCut;
-	    DrawLeft += SrcX;
-	    /* not the same as + (ImgPbBlip.mWidth / 2) due to divide truncation */
-	    int DrawRight = DrawCenter + (ImgPbBlip.mWidth - (ImgPbBlip.mWidth / 2));
-	    int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
-	    int Widd = ImgPbBlip.mWidth - DrawCut2;
-
-	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
-	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
-
-	    if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgPbBlipMask, &ImgPbBlip, SrcX, SrcY, Widd, ImgPbBlip.mHeight, DrawLeft, 96)))
+	    if (!!(r = gs_gui_nix_draw_progress_blip(
+	      Disp, Win, Gc,
+	      &ImgPbEmptyMask, &ImgPbEmpty,
+	      &ImgPbBlipMask, &ImgPbBlip,
+	      0, 96,
+	      Progress->mBlipCnt)))
+	    {
 	      GS_GOTO_CLEAN();
-	    if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgPbEmptyMask, &ImgPbEmpty, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 96)))
-	      GS_GOTO_CLEAN();
+	    }
 	  }
 	  break;
 
