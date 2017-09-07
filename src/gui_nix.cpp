@@ -80,6 +80,7 @@ typedef Window    (* d_XCreateSimpleWindow_t)(Display *display, Window parent, i
 	unsigned int width, unsigned int height, unsigned int border_width, unsigned long border, unsigned long background);
 typedef int       (* d_XDestroyWindow_t)(Display *display, Window w);
 typedef Window    (* d_XRootWindow_t)(Display *display, int screen_number);
+typedef int       (* d_XClearWindow_t)(Display *display, Window w);
 typedef unsigned long(* d_XBlackPixel_t)(Display *display, int screen_number);
 typedef unsigned long(* d_XWhitePixel_t)(Display *display, int screen_number);
 typedef int       (* d_XMapRaised_t)(Display *display, Window w);
@@ -126,6 +127,7 @@ d_XCloseDisplay_t       d_XCloseDisplay;
 d_XDefaultScreen_t      d_XDefaultScreen;
 d_XCreateSimpleWindow_t d_XCreateSimpleWindow;
 d_XDestroyWindow_t      d_XDestroyWindow;
+d_XClearWindow_t        d_XClearWindow;
 d_XRootWindow_t         d_XRootWindow;
 d_XBlackPixel_t         d_XBlackPixel;
 d_XWhitePixel_t         d_XWhitePixel;
@@ -177,6 +179,8 @@ int gs_gui_nix_xlibinit()
 	if (!(d_XCreateSimpleWindow = (d_XCreateSimpleWindow_t)dlsym(Handle, "XCreateSimpleWindow")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XDestroyWindow = (d_XDestroyWindow_t)dlsym(Handle, "XDestroyWindow")))
+		GS_ERR_CLEAN(1);
+	if (!(d_XClearWindow = (d_XClearWindow_t)dlsym(Handle, "XClearWindow")))
 		GS_ERR_CLEAN(1);
 	if (!(d_XRootWindow = (d_XRootWindow_t)dlsym(Handle, "XRootWindow")))
 		GS_ERR_CLEAN(1);
@@ -574,7 +578,7 @@ int gs_gui_nix_drawimage_mask_p(
 
   GS_ASSERT(ImgMask->mWidth == ImgDraw->mWidth && ImgMask->mHeight == ImgDraw->mHeight);
   
-  d_XSetClipOrigin(Disp, Gc, DestX, DestY);
+  d_XSetClipOrigin(Disp, Gc, DestX - SrcX, DestY - SrcY);
   d_XSetClipMask(Disp, Gc, ImgMask->mPix);
 
   d_XCopyArea(Disp, ImgDraw->mPix, Dest, Gc, SrcX, SrcY, Width, Height, DestX, DestY);
@@ -636,6 +640,10 @@ int gs_gui_nix_progress_update(struct GsGuiProgress *Progress)
       Progress->mMode = 0; /*ratio*/
     }
     else if (1 == sscanf(TmpBuf, "BLIP %d", &Progress->mBlipVal)) {
+      if (Progress->mBlipValOld != Progress->mBlipVal) {
+	Progress->mBlipValOld = Progress->mBlipVal;
+	Progress->mBlipCnt++;
+      }
       Progress->mMode = 1; /*blip*/
     }
     else {
@@ -676,8 +684,11 @@ int gs_gui_nix_threadfunc()
 	Visual *Visual = NULL;
 	struct AuxImgP Img0 = {};
 	struct AuxImgP ImgPbEmpty = {};
+	struct AuxImgP ImgPbEmptyMask = {};
 	struct AuxImgP ImgPbFull = {};
 	struct AuxImgP ImgMask0 = {};
+	struct AuxImgP ImgPbBlip = {};
+	struct AuxImgP ImgPbBlipMask = {};
 
 	XGCValues GcValues = {};
 	GC Gc = nullptr;
@@ -719,10 +730,17 @@ int gs_gui_nix_threadfunc()
 
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbempty_384_32_.data", &ImgPbEmpty)))
 	    GS_GOTO_CLEAN();
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbempty_384_32_.data", 0x00FF00, &ImgPbEmptyMask)))
+	  GS_GOTO_CLEAN();
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
 	    GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", 0x00FF00, &ImgMask0)))
+	  GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbblip_96_32_.data", &ImgPbBlip)))
+	  GS_GOTO_CLEAN();
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbblip_96_32_.data", 0x00FF00, &ImgPbBlipMask)))
 	  GS_GOTO_CLEAN();
 
 	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
@@ -732,8 +750,8 @@ int gs_gui_nix_threadfunc()
 	d_XMapRaised(Disp, Win);
 
 	while (true) {
-	  static int Cnt00 = -1;
-	  Cnt00++; Cnt00 = Cnt00 % 100;
+	  //static int Cnt00 = -1;
+	  //Cnt00++; Cnt00 = Cnt00 % 100;
 	  static std::default_random_engine RandomEngine;
 	  //{ log_guard_t Log(Ll); GS_LOG(I, PF, "RATIO %d OF %d", Cnt00, 100); }
 	  { log_guard_t Log(Ll); GS_LOG(I, PF, "BLIP %d", (int) RandomEngine()); }
@@ -785,6 +803,8 @@ int gs_gui_nix_threadfunc()
 	  if (!!(r = gs_gui_nix_progress_update(Progress)))
 	    GS_GOTO_CLEAN();
 
+	  d_XClearWindow(Disp, Win);
+
 	  GS_ASSERT(!gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgMask0, &ImgPbFull, 0, 0, ImgPbFull.mWidth, ImgPbFull.mHeight, 0, 64));
 	  
 	  switch (Progress->mMode)
@@ -802,14 +822,28 @@ int gs_gui_nix_threadfunc()
 
 	  case 1:
 	  {
-	    float Ratio = 0.0f;
-	    if (Progress->mBlipValOld != Progress->mBlipVal) {
-	      Progress->mBlipValOld = Progress->mBlipVal;
-	      Progress->mBlipCnt++;
-	    }
-	    Ratio = (float) (Progress->mBlipCnt % 100) / 100;
+	    float Ratio = (float) (Progress->mBlipCnt % 100) / 100;;
+	    int PbLeft = 0;
+	    int PbRight = 384;
+	    int Pixel = ImgPbEmpty.mWidth * Ratio;
+	    int SrcX = 0, SrcY = 0;
+	    int DrawCenter = PbLeft + Pixel;
+	    int DrawLeft = DrawCenter - (ImgPbBlip.mWidth / 2);
+	    int DrawCut = GS_MAX(PbLeft - DrawLeft, 0);
+	    SrcX = DrawCut;
+	    DrawLeft += SrcX;
+	    /* not the same as + (ImgPbBlip.mWidth / 2) due to divide truncation */
+	    int DrawRight = DrawCenter + (ImgPbBlip.mWidth - (ImgPbBlip.mWidth / 2));
+	    int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
+	    int Widd = ImgPbBlip.mWidth - DrawCut2;
+
 	    d_XCopyArea(Disp, ImgPbEmpty.mPix, Win, Gc, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 32);
 	    d_XCopyArea(Disp, ImgPbFull.mPix, Win, Gc, 0, 0, ImgPbFull.mWidth * Ratio, ImgPbFull.mHeight, 0, 32);
+
+	    if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgPbBlipMask, &ImgPbBlip, SrcX, SrcY, Widd, ImgPbBlip.mHeight, DrawLeft, 96)))
+	      GS_GOTO_CLEAN();
+	    if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgPbEmptyMask, &ImgPbEmpty, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0, 96)))
+	      GS_GOTO_CLEAN();
 	  }
 	  break;
 
