@@ -622,20 +622,31 @@ int gs_gui_nix_draw_progress_blip(
 {
   int r = 0;
 
-  float Ratio = (float) (BlipCnt % 100) / 100;;
-  int PbLeft = 0;
-  int PbRight = 384;
-  int Pixel = ImgPbEmpty->mWidth * Ratio;
-  int SrcX = 0;
-  int DrawCenter = PbLeft + Pixel;
-  int DrawLeft = DrawCenter - (ImgPbBlip->mWidth / 2);
+  const float Ratio = (float) (BlipCnt % 100) / 100;
+  const int BlipLeftHalf = ImgPbBlip->mWidth / 2;
+  const int BlipRightHalf = ImgPbBlip->mWidth - BlipLeftHalf;
+  const int PbLeft = 0;                   /*blip cutoff*/
+  const int PbRight = ImgPbEmpty->mWidth; /*blip cutoff*/
+  const int Pixel = ImgPbEmpty->mWidth * Ratio; /*blip center (rel)*/
+  int DrawCenter = Pixel;                 /*blip center (???)*/
+  int DrawLeft = DrawCenter - BlipLeftHalf;
   int DrawCut = GS_MAX(PbLeft - DrawLeft, 0);
+  int SrcX = 0;
+  /* imagine wanting to draw blip at x-plane of 10 (DrawLeft) but skip
+     everything until 15 (PbLeft). you'd want to
+       - start drawing at x-plane 15 (DrawLeft)
+       - draw pixels of blip higher than 5 (10->15) (SrcX)
+     */
   SrcX = DrawCut;
   DrawLeft += SrcX;
-  /* not the same as + (ImgPbBlip.mWidth / 2) due to divide truncation */
-  int DrawRight = DrawCenter + (ImgPbBlip->mWidth - (ImgPbBlip->mWidth / 2));
+  /* having adjusted DrawLeft and SrcX for left skip, compute right skip
+     note that after the adjustment ex DrawCenter needs to be recomputed
+     right skip will be done by recomputing values as needed then setting width (Widd) appropriately */
+  DrawCenter = DrawLeft + BlipLeftHalf;
+  int DrawRight = DrawCenter + BlipRightHalf;
   int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
-  int Widd = ImgPbBlip->mWidth - DrawCut2;
+  int WiddRemainingConsideringSrcX = ImgPbBlip->mWidth - SrcX;
+  int Widd = WiddRemainingConsideringSrcX - DrawCut2;
 
   if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbBlipMask, ImgPbBlip, SrcX, 0, Widd, ImgPbBlip->mHeight, DestX + DrawLeft, DestY)))
     GS_GOTO_CLEAN();
