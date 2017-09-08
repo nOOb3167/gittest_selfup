@@ -1,9 +1,15 @@
 #include <cstring>
 
+#include <thread>
+#include <chrono>
+
 #include <windows.h>
+#include <wingdi.h>
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
+
+#define GS_GUI_WIN_FRAMERATE 30
 
 const char GsGuiWinClassName[] = "GsGuiWinClass";
 const char GsGuiWinWindowName[] = "Selfupdate";
@@ -113,39 +119,10 @@ LRESULT CALLBACK WndProc(HWND Hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	int r = 0;
 
-	static HBITMAP hBitmap = NULL;
-
 	switch (Msg)
 	{
 	case WM_CREATE:
 	{
-		HDC hDc = NULL;
-		
-		char D[64 * 64 * 3] = {};
-
-		for (size_t y = 0; y < 64; y++)
-			for (size_t x = 0; x < 64; x++) {
-				if ((x / 8) % 3 == 0 && (y / 8) % 3 == 0) {
-					D[64 * 3 * y + 3 * x + 0] = 0x00;
-					D[64 * 3 * y + 3 * x + 1] = 0xFF;
-					D[64 * 3 * y + 3 * x + 2] = 0xFF;
-				}
-				else {
-					D[64 * 3 * y + 3 * x + 0] = 0x00;
-					D[64 * 3 * y + 3 * x + 1] = 0x00;
-					D[64 * 3 * y + 3 * x + 2] = 0xFF;
-				}
-			}
-
-		if (!(hDc = GetDC(Hwnd)))
-			{ r = 1; goto cleansub1; }
-
-		if (!!(r = gs_gui_win_bitmap_from_rgb(hDc, 64, 64, D, sizeof D, &hBitmap)))
-			goto cleansub1;
-
-	cleansub1:
-		if (hDc)
-			ReleaseDC(Hwnd, hDc);
 		if (!!r)
 			GS_ASSERT(0);
 	}
@@ -158,9 +135,6 @@ LRESULT CALLBACK WndProc(HWND Hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		
 		if (!(hDc = BeginPaint(Hwnd, &Ps)))
 			{ r = 1; goto cleansub2; }
-
-		if (!!(r = gs_gui_win_bitmap_draw(hDc, 0, 0, hBitmap)))
-			goto cleansub2;
 
 	cleansub2:
 		if (hDc)
@@ -180,12 +154,31 @@ int gs_gui_win_threadfunc()
 {
 	int r = 0;
 
+	int FrameDurationMsec = 1000 / GS_GUI_WIN_FRAMERATE;
+
 	HINSTANCE hInstance = NULL;
 
 	WNDCLASSEX Wc = {};
 	HWND Hwnd = 0;
 	BOOL Ret = 0;
 	MSG Msg = {};
+
+	HBITMAP hBitmap = NULL;
+
+	char D[64 * 64 * 3] = {};
+
+	for (size_t y = 0; y < 64; y++)
+		for (size_t x = 0; x < 64; x++) {
+			if ((x / 8) % 3 == 0 && (y / 8) % 3 == 0) {
+				D[64 * 3 * y + 3 * x + 0] = 0x00;
+				D[64 * 3 * y + 3 * x + 1] = 0xFF;
+				D[64 * 3 * y + 3 * x + 2] = 0xFF;
+			} else {
+				D[64 * 3 * y + 3 * x + 0] = 0x00;
+				D[64 * 3 * y + 3 * x + 1] = 0x00;
+				D[64 * 3 * y + 3 * x + 2] = 0xFF;
+			}
+		}
 
 	/* NOTE: beware GetModuleHandle(NULL) caveat when called from DLL (should not apply here though) */
 	if (!(hInstance = GetModuleHandle(NULL)))
@@ -223,12 +216,67 @@ int gs_gui_win_threadfunc()
 	if (! UpdateWindow(Hwnd))
 		GS_ERR_CLEAN(1);
 
-	while ((Ret = GetMessage(&Msg, NULL, 0, 0)) != 0)
 	{
-		if (Ret == -1)
+		HDC hDcStartup = NULL;
+
+		if (!(hDcStartup = GetDC(Hwnd)))
+			GS_ERR_CLEANSUB(1);
+
+		if (!!(r = gs_gui_win_bitmap_from_rgb(hDcStartup, 64, 64, D, sizeof D, &hBitmap)))
+			GS_GOTO_CLEAN();
+
+	cleansub:
+		if (hDcStartup)
+			ReleaseDC(Hwnd, hDcStartup);
+
+		if (!!r)
 			GS_ERR_CLEAN(1);
-		TranslateMessage(&Msg);
-		DispatchMessage(&Msg);
+	}
+
+	while (true) {
+		static int Cnt00 = -1;
+		Cnt00++; Cnt00 = Cnt00 % 100;
+		auto TimePointStart = std::chrono::system_clock::now();
+		while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&Msg);
+			DispatchMessage(&Msg);
+		}
+
+		{
+			HDC hDc = NULL;
+			RECT WindowRect = {};
+			RECT ClearRect = {};
+			HBRUSH BgBrush = NULL;
+
+			if (!(hDc = GetDC(Hwnd)))
+				GS_ERR_CLEAN(1);
+
+			if (! GetWindowRect(Hwnd, &WindowRect))
+				GS_ERR_CLEAN(1);
+
+			ClearRect.left = 0;
+			ClearRect.top = 0;
+			ClearRect.right = WindowRect.right - WindowRect.left;
+			ClearRect.bottom = WindowRect.bottom - WindowRect.top;
+
+			if (! (BgBrush = CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF))))
+				GS_ERR_CLEAN(1);
+
+			if (! FillRect(hDc, &ClearRect, BgBrush))
+				GS_ERR_CLEAN(1);
+
+			if (!!(r = gs_gui_win_bitmap_draw(hDc, 0 + Cnt00, 64, hBitmap)))
+				GS_GOTO_CLEAN();
+
+			if (BgBrush)
+				DeleteObject(BgBrush);
+
+			if (hDc)
+				ReleaseDC(Hwnd, hDc);
+		}
+
+		std::this_thread::sleep_until(TimePointStart + std::chrono::milliseconds(FrameDurationMsec));
 	}
 
 clean:
