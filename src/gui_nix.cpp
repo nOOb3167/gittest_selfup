@@ -636,13 +636,13 @@ int gs_gui_nix_draw_progress_blip(
      everything until 15 (PbLeft). you'd want to
        - start drawing at x-plane 15 (DrawLeft)
        - draw pixels of blip higher than 5 (10->15) (SrcX)
+     left skip will be done setting DrawLeft and SrcX appropriately
      */
   SrcX = DrawCut;
   DrawLeft += SrcX;
   /* having adjusted DrawLeft and SrcX for left skip, compute right skip
-     note that after the adjustment ex DrawCenter needs to be recomputed
-     right skip will be done by recomputing values as needed then setting width (Widd) appropriately */
-  DrawCenter = DrawLeft + BlipLeftHalf;
+     note that after the adjustment width of blip essentially changed
+     right skip will be done setting width (Widd) appropriately */
   int DrawRight = DrawCenter + BlipRightHalf;
   int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
   int WiddRemainingConsideringSrcX = ImgPbBlip->mWidth - SrcX;
