@@ -134,6 +134,7 @@ TARGET_INCLUDE_DIRECTORIES(gittest_ev2_serv PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS
 
 SET(GITTEST_EV2_SELFUPDATE_HEADERS
   include/gittest/gittest_ev2_test.h
+  include/gittest/gui.h
   ${GITTEST_LIB_HEADERS}
 )
 
@@ -142,6 +143,7 @@ SET(GITTEST_EV2_SELFUPDATE_SOURCES
   src/gittest_ev2_test_c.cpp
   src/gittest_ev2_test_su.cpp
   src/gittest_ev2_common.cpp
+  src/gui.cpp
   ${GITTEST_LIB_SOURCES}
 )
 IF (WIN32)

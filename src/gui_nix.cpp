@@ -19,6 +19,7 @@
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
+#include <gittest/gui.h>
 
 /*
 https://en.wikibooks.org/wiki/X_Window_Programming/Xlib#Example
@@ -47,30 +48,12 @@ https://refspecs.linuxfoundation.org/LSB_3.1.0/LSB-Desktop-generic/LSB-Desktop-g
 
 #define GS_GUI_NIX_XLIB_NAME "libX11.so"
 
-#define GS_GUI_NIX_FRAMERATE 30
-
-struct AuxImg
-{
-	std::string mName;
-	int mWidth;
-	int mHeight;
-	std::string mData;
-};
-
 struct AuxImgP
 {
 	std::string mName;
 	int mWidth;
 	int mHeight;
 	Pixmap mPix;
-};
-
-struct GsGuiProgress
-{
-  struct GsLogBase *mProgressHintLog;
-  int mMode; /* 0:ratio 1:blip */
-  int mRatioA, mRatioB;
-  int mBlipValOld, mBlipVal, mBlipCnt;
 };
 
 typedef Display * (* d_XOpenDisplay_t)(char *display_name);
@@ -86,34 +69,26 @@ typedef unsigned long(* d_XWhitePixel_t)(Display *display, int screen_number);
 typedef int       (* d_XMapRaised_t)(Display *display, Window w);
 typedef int       (* d_XNextEvent_t)(Display *display, XEvent *event_return);
 typedef Bool      (* d_XCheckIfEvent_t)(Display *display, XEvent *event_return, Bool(*predicate)(), XPointer arg);
-typedef XImage *  (* d_XCreateImage_t)(Display *display, Visual *visual, unsigned int
-	depth, int format, int offset, char *data, unsigned int width,
-	unsigned int height, int bitmap_pad, int bytes_per_line);
+typedef XImage *  (* d_XCreateImage_t)(Display *display, Visual *visual, unsigned int depth, int format, int offset,
+	char *data, unsigned int width, unsigned int height, int bitmap_pad, int bytes_per_line);
 typedef int       (* d_XDestroyImage_t)(XImage *ximage);
-typedef Status    (* d_XMatchVisualInfo_t)(Display *display, int screen, int depth, int
-	klass, XVisualInfo *vinfo_return);
-typedef Pixmap    (* d_XCreatePixmap_t)(Display *display, Drawable d, unsigned int width,
-	unsigned int height, unsigned int depth);
-typedef Pixmap    (* d_XCreatePixmapFromBitmapData_t)(Display *display, Drawable d, char
-              *data, unsigned int width, unsigned int height, unsigned long
-              fg, unsigned long bg, unsigned int depth);
+typedef Status    (* d_XMatchVisualInfo_t)(Display *display, int screen, int depth, int klass, XVisualInfo *vinfo_return);
+typedef Pixmap    (* d_XCreatePixmap_t)(Display *display, Drawable d, unsigned int width, unsigned int height, unsigned int depth);
+typedef Pixmap    (* d_XCreatePixmapFromBitmapData_t)(Display *display, Drawable d, char *data,
+	unsigned int width, unsigned int height, unsigned long fg, unsigned long bg, unsigned int depth);
 typedef int       (* d_XFreePixmap_t)(Display *display, Pixmap pixmap);
-typedef GC        (* d_XCreateGC_t)(Display *display, Drawable d, unsigned long valuemask,
-	XGCValues *values);
+typedef GC        (* d_XCreateGC_t)(Display *display, Drawable d, unsigned long valuemask, XGCValues *values);
 typedef int       (* d_XFreeGC_t)(Display *display, GC gc);
-typedef int       (* d_XPutImage_t)(Display *display, Drawable d, GC gc, XImage *image, int
-	src_x, int src_y, int dest_x, int dest_y, unsigned int width,
-	unsigned int height);
-typedef int       (* d_XCopyArea_t)(Display *display, Drawable src, Drawable dest, GC gc, int
-	src_x, int src_y, unsigned int width, unsigned height, int
-	dest_x, int dest_y);
+typedef int       (* d_XPutImage_t)(Display *display, Drawable d, GC gc, XImage *image,
+	int src_x, int src_y, int dest_x, int dest_y, unsigned int width, unsigned int height);
+typedef int       (* d_XCopyArea_t)(Display *display, Drawable src, Drawable dest, GC gc,
+	int src_x, int src_y, unsigned int width, unsigned height, int dest_x, int dest_y);
 typedef int       (* d_XSetClipOrigin_t)(Display *display, GC gc, int clip_x_origin, int clip_y_origin);
 typedef int       (* d_XSetClipMask_t)(Display *display, GC gc, Pixmap pixmap);
 typedef int       (* d_XSelectInput_t)(Display *display, Window w, long event_mask);
 typedef Atom      (* d_XInternAtom_t)(Display *display, char *atom_name, Bool only_if_exists);
 typedef int       (* d_XSync_t)(Display *display, Bool discard);
-typedef Status    (* d_XSendEvent_t)(Display *display, Window w, Bool propagate, long
-	event_mask, XEvent *event_send);
+typedef Status    (* d_XSendEvent_t)(Display *display, Window w, Bool propagate, long event_mask, XEvent *event_send);
 typedef Status    (* d_XInitThreads_t)(void);
 typedef Status    (* d_XSetWMProtocols_t)(Display *display, Window w, Atom *protocols, int count);
 /* upboat if you have no what the copy pasted declaration below means - thanks stackoverflow */
@@ -428,60 +403,6 @@ clean:
   return r;
 }
 
-int gs_gui_nix_readfile(
-	const std::string &FName,
-	std::string *oData)
-{
-	std::stringstream Stream;
-	std::ifstream File(FName.c_str(), std::ios::in | std::ios::binary);
-	Stream << File.rdbuf();
-	if (File.bad())
-		return 1;
-	if (oData)
-		*oData = Stream.str();
-	return 0;
-}
-
-int gs_gui_nix_readimage(
-	const std::string &FName,
-	struct AuxImg *oImg)
-{
-	int r = 0;
-
-	struct AuxImg Img = {};
-
-	std::string Data;
-
-	std::vector<std::string> Tokens;
-
-	std::stringstream ss(FName);
-	std::string item;
-
-	if (!!gs_gui_nix_readfile(FName, &Data))
-		GS_ERR_CLEAN(1);
-
-	while (std::getline(ss, item, '_'))
-		Tokens.push_back(item);
-
-	if (Tokens.size() < 3)
-		GS_ERR_CLEAN(1);
-
-	Img.mName = Tokens[0];
-	Img.mWidth = stoi(Tokens[1], NULL, 10);
-	Img.mHeight = stoi(Tokens[2], NULL, 10);
-	Img.mData.swap(Data);
-
-	if (Img.mData.size() != Img.mWidth * Img.mHeight * 3)
-		GS_ERR_CLEAN(1);
-
-	if (oImg)
-		*oImg = Img;
-
-clean:
-
-	return r;
-}
-
 int gs_gui_nix_readimage_p(
 	Display *Disp, Visual *Visual, Window Window,
 	const std::string &FName,
@@ -494,7 +415,7 @@ int gs_gui_nix_readimage_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_nix_readimage(FName, &Img)))
+	if (!!(r = gs_gui_readimage(FName, &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_from_rgb(
@@ -536,7 +457,7 @@ int gs_gui_nix_readimage_mask_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_nix_readimage(FName, &Img)))
+	if (!!(r = gs_gui_readimage(FName, &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_mask_color_from_rgb(
@@ -622,108 +543,17 @@ int gs_gui_nix_draw_progress_blip(
 {
   int r = 0;
 
-  const float Ratio = (float) (BlipCnt % 100) / 100;
-  const int BlipLeftHalf = ImgPbBlip->mWidth / 2;
-  const int BlipRightHalf = ImgPbBlip->mWidth - BlipLeftHalf;
-  const int PbLeft = 0;                   /*blip cutoff*/
-  const int PbRight = ImgPbEmpty->mWidth; /*blip cutoff*/
-  const int Pixel = ImgPbEmpty->mWidth * Ratio; /*blip center (rel)*/
-  int DrawCenter = Pixel;                 /*blip center (???)*/
-  int DrawLeft = DrawCenter - BlipLeftHalf;
-  int DrawCut = GS_MAX(PbLeft - DrawLeft, 0);
-  int SrcX = 0;
-  /* imagine wanting to draw blip at x-plane of 10 (DrawLeft) but skip
-     everything until 15 (PbLeft). you'd want to
-       - start drawing at x-plane 15 (DrawLeft)
-       - draw pixels of blip higher than 5 (10->15) (SrcX)
-     left skip will be done setting DrawLeft and SrcX appropriately
-     */
-  SrcX = DrawCut;
-  DrawLeft += SrcX;
-  /* having adjusted DrawLeft and SrcX for left skip, compute right skip
-     note that after the adjustment width of blip essentially changed
-     right skip will be done setting width (Widd) appropriately */
-  int DrawRight = DrawCenter + BlipRightHalf;
-  int DrawCut2 = GS_MAX(DrawRight - PbRight, 0);
-  int WiddRemainingConsideringSrcX = ImgPbBlip->mWidth - SrcX;
-  int Widd = WiddRemainingConsideringSrcX - DrawCut2;
+  int SrcX = 0, DrawLeft = 0, DrawWidth = 0;
 
-  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbBlipMask, ImgPbBlip, SrcX, 0, Widd, ImgPbBlip->mHeight, DestX + DrawLeft, DestY)))
-    GS_GOTO_CLEAN();
+  if (!!(r = gs_gui_progress_blip_calc(BlipCnt, ImgPbEmpty->mWidth, ImgPbBlip->mWidth, &SrcX, &DrawLeft, &DrawWidth)))
+	  GS_GOTO_CLEAN();
+
+  if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbBlipMask, ImgPbBlip, SrcX, 0, DrawWidth, ImgPbBlip->mHeight, DestX + DrawLeft, DestY)))
+	  GS_GOTO_CLEAN();
   if (!!(r = gs_gui_nix_drawimage_mask_p(Disp, Dest, Gc, ImgPbEmptyMask, ImgPbEmpty, 0, 0, ImgPbEmpty->mWidth, ImgPbEmpty->mHeight, DestX, DestY)))
-    GS_GOTO_CLEAN();
-  
+	  GS_GOTO_CLEAN();
+
  clean:
-
-  return r;
-}
-
-int gs_gui_nix_progress_update(struct GsGuiProgress *Progress)
-{
-  int r = 0;
-
-  static struct GsLogBase *Ll = GS_LOG_GET("progress_hint");
-
-  char *DumpBuf = NULL;
-  char *TmpBuf = NULL;
-  size_t LenDump = 0;
-
-  GsLogCrashHandlerDumpBufData Data = {};
-
-  std::vector<std::string> Msg;
-
-  if (!(DumpBuf = (char *) malloc(GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES)))
-    GS_ERR_CLEAN(1);
-  if (!(TmpBuf = (char *) malloc(GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES)))
-    GS_ERR_CLEAN(1);
-  LenDump = GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES;
-
-  Data.Tripwire = GS_TRIPWIRE_LOG_CRASH_HANDLER_DUMP_BUF_DATA;
-  Data.Buf = DumpBuf;
-  Data.MaxWritePos = GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES;
-  Data.CurrentWritePos = 0;
-  Data.IsOverflow = 0;
-
-  if (!!(r = gs_log_dump_lowlevel(Ll, &Data, gs_log_crash_handler_dump_buf_cb)))
-    GS_GOTO_CLEAN();
-
-  for (const char *Ptr = DumpBuf, *Ptr2 = DumpBuf, *End = DumpBuf + Data.CurrentWritePos;
-       Ptr < End;
-       Ptr = (Ptr2 += 1))
-  {
-    while (Ptr2 < End && *Ptr2 != '\n')
-      Ptr2++;
-    Msg.push_back(std::string(Ptr, Ptr2));
-  }
-
-  {
-    size_t Last = Msg.size() - 1;
-    if (Msg.empty())
-      GS_ERR_NO_CLEAN(0);
-    GS_ASSERT(Msg[Last].size() < GS_ARBITRARY_LOG_DUMP_FILE_LIMIT_BYTES - 1 /*zero*/);
-    /* [^]]]: [^x] - negated scanset of x (here x is']'), finally match ']' */
-    if (1 != sscanf(Msg[Last].c_str(), "[progress_hint] [%*[^]]]: [%[^]]]", TmpBuf))
-      GS_ERR_CLEAN(1);
-    if (2 == sscanf(TmpBuf, "RATIO %d OF %d", &Progress->mRatioA, &Progress->mRatioB)) {
-      Progress->mMode = 0; /*ratio*/
-    }
-    else if (1 == sscanf(TmpBuf, "BLIP %d", &Progress->mBlipVal)) {
-      if (Progress->mBlipValOld != Progress->mBlipVal) {
-	Progress->mBlipValOld = Progress->mBlipVal;
-	Progress->mBlipCnt++;
-      }
-      Progress->mMode = 1; /*blip*/
-    }
-    else {
-      GS_ERR_CLEAN(1);
-    }
-  }
-
-noclean:
-
-clean:
-  if (DumpBuf)
-    free(DumpBuf);
 
   return r;
 }
@@ -739,7 +569,7 @@ int gs_gui_nix_threadfunc()
 
 	static struct GsLogBase *Ll = GS_LOG_GET("progress_hint");
 
-	int FrameDurationMsec = 1000 / GS_GUI_NIX_FRAMERATE;
+	int FrameDurationMsec = 1000 / GS_GUI_FRAMERATE;
 
 	struct GsGuiProgress *Progress = NULL;
 
@@ -866,7 +696,7 @@ int gs_gui_nix_threadfunc()
 		}
           }
 
-	  if (!!(r = gs_gui_nix_progress_update(Progress)))
+	  if (!!(r = gs_gui_progress_update(Progress)))
 	    GS_GOTO_CLEAN();
 
 	  d_XClearWindow(Disp, Win);

@@ -2,14 +2,24 @@
 
 #include <thread>
 #include <chrono>
+#include <string>
 
 #include <windows.h>
 #include <wingdi.h>
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
+#include <gittest/gui.h>
 
 #define GS_GUI_WIN_FRAMERATE 30
+
+struct AuxImgB
+{
+	std::string mName;
+	int mWidth;
+	int mHeight;
+	HBITMAP mBitmap;
+};
 
 const char GsGuiWinClassName[] = "GsGuiWinClass";
 const char GsGuiWinWindowName[] = "Selfupdate";
@@ -76,6 +86,47 @@ clean:
 	if (TmpBuf)
 		free(TmpBuf);
 
+	if (!!r) {
+		if (hBitmap)
+			DeleteObject(hBitmap);
+	}
+
+	return r;
+}
+
+int gs_gui_win_readimage_b(
+	HDC hDc,
+	const std::string &FName,
+	struct AuxImgB *oImgB)
+{
+	int r = 0;
+
+	struct AuxImgB ImgB = {};
+
+	struct AuxImg Img = {};
+	HBITMAP hBitmap = NULL;
+
+	if (!!(r = gs_gui_readimage(FName, &Img)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_win_bitmap_from_rgb(
+		hDc,
+		Img.mWidth, Img.mHeight,
+		Img.mData.data(), Img.mData.size(),
+		&hBitmap)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	ImgB.mName = Img.mName;
+	ImgB.mWidth = Img.mWidth;
+	ImgB.mHeight = Img.mHeight;
+	ImgB.mBitmap = hBitmap;
+
+	if (oImgB)
+		*oImgB = ImgB;
+
+clean:
 	if (!!r) {
 		if (hBitmap)
 			DeleteObject(hBitmap);
@@ -163,22 +214,7 @@ int gs_gui_win_threadfunc()
 	BOOL Ret = 0;
 	MSG Msg = {};
 
-	HBITMAP hBitmap = NULL;
-
-	char D[64 * 64 * 3] = {};
-
-	for (size_t y = 0; y < 64; y++)
-		for (size_t x = 0; x < 64; x++) {
-			if ((x / 8) % 3 == 0 && (y / 8) % 3 == 0) {
-				D[64 * 3 * y + 3 * x + 0] = 0x00;
-				D[64 * 3 * y + 3 * x + 1] = 0xFF;
-				D[64 * 3 * y + 3 * x + 2] = 0xFF;
-			} else {
-				D[64 * 3 * y + 3 * x + 0] = 0x00;
-				D[64 * 3 * y + 3 * x + 1] = 0x00;
-				D[64 * 3 * y + 3 * x + 2] = 0xFF;
-			}
-		}
+	struct AuxImgB ImgPbEmpty = {};
 
 	/* NOTE: beware GetModuleHandle(NULL) caveat when called from DLL (should not apply here though) */
 	if (!(hInstance = GetModuleHandle(NULL)))
@@ -220,17 +256,13 @@ int gs_gui_win_threadfunc()
 		HDC hDcStartup = NULL;
 
 		if (!(hDcStartup = GetDC(Hwnd)))
-			GS_ERR_CLEANSUB(1);
+			GS_ERR_CLEAN(1);
 
-		if (!!(r = gs_gui_win_bitmap_from_rgb(hDcStartup, 64, 64, D, sizeof D, &hBitmap)))
+		if (!!(r = gs_gui_win_readimage_b(hDcStartup, "imgpbempty_384_32_.data", &ImgPbEmpty)))
 			GS_GOTO_CLEAN();
-
-	cleansub:
+		
 		if (hDcStartup)
 			ReleaseDC(Hwnd, hDcStartup);
-
-		if (!!r)
-			GS_ERR_CLEAN(1);
 	}
 
 	while (true) {
@@ -266,7 +298,7 @@ int gs_gui_win_threadfunc()
 			if (! FillRect(hDc, &ClearRect, BgBrush))
 				GS_ERR_CLEAN(1);
 
-			if (!!(r = gs_gui_win_bitmap_draw(hDc, 0 + Cnt00, 64, hBitmap)))
+			if (!!(r = gs_gui_win_bitmap_draw(hDc, 0 + Cnt00, 64, ImgPbEmpty.mBitmap)))
 				GS_GOTO_CLEAN();
 
 			if (BgBrush)
