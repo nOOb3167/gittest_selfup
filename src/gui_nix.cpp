@@ -415,7 +415,7 @@ int gs_gui_nix_readimage_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_readimage(FName, &Img)))
+	if (!!(r = gs_gui_readimage_file(FName, &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_from_rgb(
@@ -457,7 +457,7 @@ int gs_gui_nix_readimage_mask_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_readimage(FName, &Img)))
+	if (!!(r = gs_gui_readimage_file(FName, &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_mask_color_from_rgb(

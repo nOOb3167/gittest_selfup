@@ -30,8 +30,16 @@ int gs_gui_readfile(
 	const std::string &FName,
 	std::string *oData);
 
-int gs_gui_readimage(
+int gs_gui_readimage_data(
 	const std::string &FName,
+	const std::string &Data,
+	struct AuxImg *oImg);
+int gs_gui_readimage_file(
+	const std::string &FName,
+	struct AuxImg *oImg);
+int gs_gui_readimage_hex(
+	const std::string &FName,
+	const std::string &HexStr,
 	struct AuxImg *oImg);
 
 int gs_gui_progress_update(struct GsGuiProgress *Progress);

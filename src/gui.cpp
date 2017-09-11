@@ -8,6 +8,7 @@
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
+#include <gittest/config.h>
 #include <gittest/gui.h>
 
 int gs_gui_readfile(
@@ -24,23 +25,19 @@ int gs_gui_readfile(
 	return 0;
 }
 
-int gs_gui_readimage(
+int gs_gui_readimage_data(
 	const std::string &FName,
+	const std::string &Data,
 	struct AuxImg *oImg)
 {
 	int r = 0;
 
 	struct AuxImg Img = {};
 
-	std::string Data;
-
 	std::vector<std::string> Tokens;
 
 	std::stringstream ss(FName);
 	std::string item;
-
-	if (!!gs_gui_readfile(FName, &Data))
-		GS_ERR_CLEAN(1);
 
 	while (std::getline(ss, item, '_'))
 		Tokens.push_back(item);
@@ -51,13 +48,59 @@ int gs_gui_readimage(
 	Img.mName = Tokens[0];
 	Img.mWidth = stoi(Tokens[1], NULL, 10);
 	Img.mHeight = stoi(Tokens[2], NULL, 10);
-	Img.mData.swap(Data);
+	Img.mData = Data;
 
 	if (Img.mData.size() != Img.mWidth * Img.mHeight * 3)
 		GS_ERR_CLEAN(1);
 
 	if (oImg)
 		*oImg = Img;
+
+clean:
+
+	return r;
+}
+
+int gs_gui_readimage_file(
+	const std::string &FName,
+	struct AuxImg *oImg)
+{
+	int r = 0;
+
+	struct AuxImg Img = {};
+
+	std::string Data;
+
+	if (!!(r = gs_gui_readfile(FName, &Data)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_gui_readimage_data(FName, Data, oImg)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
+int gs_gui_readimage_hex(
+	const std::string &FName,
+	const std::string &HexStr,
+	struct AuxImg *oImg)
+{
+	int r = 0;
+
+	struct AuxImg Img = {};
+
+	std::string Data;
+	struct GsBypartCbDataString BypartData;
+
+	GS_BYPART_DATA_INIT(String, BypartData, &Data);
+
+	if (!!gs_config_decode_hex_c(HexStr.data(), HexStr.size(), &BypartData, gs_bypart_cb_String))
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = gs_gui_readimage_data(FName, Data, oImg)))
+		GS_GOTO_CLEAN();
 
 clean:
 

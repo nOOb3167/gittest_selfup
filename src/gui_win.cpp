@@ -106,7 +106,7 @@ int gs_gui_win_readimage_b(
 	struct AuxImg Img = {};
 	HBITMAP hBitmap = NULL;
 
-	if (!!(r = gs_gui_readimage(FName, &Img)))
+	if (!!(r = gs_gui_readimage_file(FName, &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_win_bitmap_from_rgb(
