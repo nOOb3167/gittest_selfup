@@ -135,26 +135,25 @@ clean:
 	return r;
 }
 
-int gs_gui_win_bitmap_draw(
+int gs_gui_win_drawimage_mask_p(
 	HDC hDc,
-	int x, int y,
-	HBITMAP hBitmap)
+	UINT ColorTransparentRGB,
+	struct AuxImgB *ImgDraw,
+	int SrcX, int SrcY,
+	int Width, int Height,
+	int DestX, int DestY)
 {
 	int r = 0;
 
 	HDC hDc2 = NULL;
 	HGDIOBJ hObjectOld = NULL;
-	BITMAP Bitmap = {};
 
 	if (!(hDc2 = CreateCompatibleDC(hDc)))
 		GS_ERR_CLEAN(1);
 
-	if (! GetObject(hBitmap, sizeof Bitmap, &Bitmap))
-		GS_ERR_CLEAN(1);
+	hObjectOld = SelectObject(hDc2, ImgDraw->mBitmap);
 
-	hObjectOld = SelectObject(hDc2, hBitmap);
-
-	if (! TransparentBlt(hDc, x, y, Bitmap.bmWidth, Bitmap.bmHeight, hDc2, 0, 0, Bitmap.bmWidth, Bitmap.bmHeight, 0x00FFFF))
+	if (! TransparentBlt(hDc, DestX, DestY, Width, Height, hDc2, SrcX, SrcY, Width, Height, ColorTransparentRGB))
 		GS_ERR_CLEAN(1);
 
 clean:
@@ -298,7 +297,7 @@ int gs_gui_win_threadfunc()
 			if (! FillRect(hDc, &ClearRect, BgBrush))
 				GS_ERR_CLEAN(1);
 
-			if (!!(r = gs_gui_win_bitmap_draw(hDc, 0 + Cnt00, 64, ImgPbEmpty.mBitmap)))
+			if (!!(r = gs_gui_win_drawimage_mask_p(hDc, GS_GUI_COLOR_MASK_RGB, &ImgPbEmpty, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0 + Cnt00, 64)))
 				GS_GOTO_CLEAN();
 
 			if (BgBrush)

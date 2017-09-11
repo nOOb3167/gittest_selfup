@@ -7,6 +7,9 @@
 
 #define GS_GUI_FRAMERATE 30
 
+#define GS_GUI_COLOR_MASK_RGB 0x00FF00
+#define GS_GUI_COLOR_MASK_BGR 0x00FF00
+
 struct AuxImg
 {
 	std::string mName;

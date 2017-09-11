@@ -624,19 +624,19 @@ int gs_gui_nix_threadfunc()
 
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbempty_384_32_.data", &ImgPbEmpty)))
 	    GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbempty_384_32_.data", 0x00FF00, &ImgPbEmptyMask)))
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbempty_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbEmptyMask)))
 	  GS_GOTO_CLEAN();
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
 	    GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbfull_384_32_.data", 0x00FF00, &ImgPbFullMask)))
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbfull_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbFullMask)))
 	  GS_GOTO_CLEAN();
 
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", 0x00FF00, &ImgMask0)))
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgMask0)))
 	  GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbblip_96_32_.data", &ImgPbBlip)))
 	  GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbblip_96_32_.data", 0x00FF00, &ImgPbBlipMask)))
+	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbblip_96_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbBlipMask)))
 	  GS_GOTO_CLEAN();
 
 	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
