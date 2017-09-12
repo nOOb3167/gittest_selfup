@@ -21,6 +21,10 @@
 #include <gittest/log.h>
 #include <gittest/gui.h>
 
+#include <imgpbempty_384_32_.h>
+#include <imgpbfull_384_32_.h>
+#include <imgpbblip_96_32_.h>
+
 /*
 https://en.wikibooks.org/wiki/X_Window_Programming/Xlib#Example
 https://stackoverflow.com/questions/346323/xorg-loading-an-image
@@ -47,6 +51,9 @@ https://refspecs.linuxfoundation.org/LSB_3.1.0/LSB-Desktop-generic/LSB-Desktop-g
 #define GS_XLIB_XID_MAGIC_SENTINEL 0x13D0896E
 
 #define GS_GUI_NIX_XLIB_NAME "libX11.so"
+
+#define GS_GUI_NIX_READIMAGE_P_HEX(disp, visual, window, lump, p_img) gs_gui_nix_readimage_p_hex(disp, visual, window, # lump, lump, sizeof (lump), p_img)
+#define GS_GUI_NIX_READIMAGE_MASK_P_HEX(disp, visual, window, lump, mask_color_bgr, p_img) gs_gui_nix_readimage_mask_p_hex(disp, visual, window, # lump, lump, sizeof (lump), mask_color_bgr, p_img)
 
 struct AuxImgP
 {
@@ -403,9 +410,10 @@ clean:
   return r;
 }
 
-int gs_gui_nix_readimage_p(
+int gs_gui_nix_readimage_p_hex(
 	Display *Disp, Visual *Visual, Window Window,
 	const std::string &FName,
+	const char *HexBuf, size_t LenHex,
 	struct AuxImgP *oImgP)
 {
 	int r = 0;
@@ -415,7 +423,7 @@ int gs_gui_nix_readimage_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_readimage_file(FName, &Img)))
+	if (!!(r = gs_gui_readimage_hex(FName, std::string(HexBuf, LenHex), &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_from_rgb(
@@ -444,9 +452,10 @@ clean:
 	return r;
 }
 
-int gs_gui_nix_readimage_mask_p(
+int gs_gui_nix_readimage_mask_p_hex(
 	Display *Disp, Window Win,
 	const std::string &FName,
+	const char *HexBuf, size_t LenHex,
 	unsigned long MaskColorBGR,
 	struct AuxImgP *oImgP)
 {
@@ -457,7 +466,7 @@ int gs_gui_nix_readimage_mask_p(
 	struct AuxImg Img = {};
 	Pixmap Pix = GS_XLIB_XID_MAGIC_SENTINEL;
 
-	if (!!(r = gs_gui_readimage_file(FName, &Img)))
+	if (!!(r = gs_gui_readimage_hex(FName, std::string(HexBuf, LenHex), &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_nix_pixmap_mask_color_from_rgb(
@@ -580,12 +589,10 @@ int gs_gui_nix_threadfunc()
 	Atom wmDeleteWindow = {};
 
 	Visual *Visual = NULL;
-	struct AuxImgP Img0 = {};
 	struct AuxImgP ImgPbEmpty = {};
 	struct AuxImgP ImgPbEmptyMask = {};
 	struct AuxImgP ImgPbFull = {};
 	struct AuxImgP ImgPbFullMask = {};
-	struct AuxImgP ImgMask0 = {};
 	struct AuxImgP ImgPbBlip = {};
 	struct AuxImgP ImgPbBlipMask = {};
 
@@ -619,27 +626,20 @@ int gs_gui_nix_threadfunc()
 	if (!!(r = gs_gui_nix_auxvisual(Disp, d_XDefaultScreen(Disp), &Visual)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "img2_8_8_.data", &Img0)))
-	  GS_GOTO_CLEAN();
-
-	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbempty_384_32_.data", &ImgPbEmpty)))
+	if (!!(r = GS_GUI_NIX_READIMAGE_P_HEX(Disp, Visual, Win, imgpbempty_384_32_, &ImgPbEmpty)))
 	    GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbempty_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbEmptyMask)))
+	if (!!(r = GS_GUI_NIX_READIMAGE_MASK_P_HEX(Disp, Win, imgpbempty_384_32_, GS_GUI_COLOR_MASK_BGR, &ImgPbEmptyMask)))
 	  GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbfull_384_32_.data", &ImgPbFull)))
+	if (!!(r = GS_GUI_NIX_READIMAGE_P_HEX(Disp, Visual, Win, imgpbfull_384_32_, &ImgPbFull)))
 	    GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbfull_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbFullMask)))
+	if (!!(r = GS_GUI_NIX_READIMAGE_MASK_P_HEX(Disp, Win, imgpbfull_384_32_, GS_GUI_COLOR_MASK_BGR, &ImgPbFullMask)))
+	  GS_GOTO_CLEAN();
+	if (!!(r = GS_GUI_NIX_READIMAGE_P_HEX(Disp, Visual, Win, imgpbblip_96_32_, &ImgPbBlip)))
+	  GS_GOTO_CLEAN();
+	if (!!(r = GS_GUI_NIX_READIMAGE_MASK_P_HEX(Disp, Win, imgpbblip_96_32_, GS_GUI_COLOR_MASK_BGR, &ImgPbBlipMask)))
 	  GS_GOTO_CLEAN();
 
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgmask0_384_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgMask0)))
-	  GS_GOTO_CLEAN();
-
-	if (!!(r = gs_gui_nix_readimage_p(Disp, Visual, Win, "imgpbblip_96_32_.data", &ImgPbBlip)))
-	  GS_GOTO_CLEAN();
-	if (!!(r = gs_gui_nix_readimage_mask_p(Disp, Win, "imgpbblip_96_32_.data", GS_GUI_COLOR_MASK_BGR, &ImgPbBlipMask)))
-	  GS_GOTO_CLEAN();
-
-	Gc = d_XCreateGC(Disp, Img0.mPix, 0, &GcValues);
+	Gc = d_XCreateGC(Disp, Win, 0, &GcValues);
 
 	d_XSelectInput(Disp, Win, ExposureMask | StructureNotifyMask);
 
@@ -701,8 +701,6 @@ int gs_gui_nix_threadfunc()
 
 	  d_XClearWindow(Disp, Win);
 
-	  GS_ASSERT(!gs_gui_nix_drawimage_mask_p(Disp, Win, Gc, &ImgMask0, &ImgPbFull, 0, 0, ImgPbFull.mWidth, ImgPbFull.mHeight, 0, 64));
-	  
 	  switch (Progress->mMode)
 	  {
 	  case 0:
