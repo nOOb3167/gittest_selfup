@@ -53,7 +53,7 @@ https://refspecs.linuxfoundation.org/LSB_3.1.0/LSB-Desktop-generic/LSB-Desktop-g
 #define GS_GUI_NIX_XLIB_NAME "libX11.so"
 
 #define GS_GUI_NIX_READIMAGE_P_HEX(disp, visual, window, lump, p_img) gs_gui_nix_readimage_p_hex(disp, visual, window, # lump, lump, sizeof (lump), p_img)
-#define GS_GUI_NIX_READIMAGE_MASK_P_HEX(disp, visual, window, lump, mask_color_bgr, p_img) gs_gui_nix_readimage_mask_p_hex(disp, visual, window, # lump, lump, sizeof (lump), mask_color_bgr, p_img)
+#define GS_GUI_NIX_READIMAGE_MASK_P_HEX(disp, window, lump, mask_color_bgr, p_img) gs_gui_nix_readimage_mask_p_hex(disp, window, # lump, lump, sizeof (lump), mask_color_bgr, p_img)
 
 struct AuxImgP
 {
@@ -661,7 +661,6 @@ int gs_gui_nix_threadfunc()
 		case Expose:
 		{
 			printf("Expose\n");
-			d_XCopyArea(Disp, Img0.mPix, Win, Gc, 0, 0, 32, 32, 0, 0);
 		}
 		break;
 
