@@ -11,7 +11,13 @@
 #include <gittest/log.h>
 #include <gittest/gui.h>
 
+#include <imgpbempty_384_32_.h>
+#include <imgpbfull_384_32_.h>
+#include <imgpbblip_96_32_.h>
+
 #define GS_GUI_WIN_FRAMERATE 30
+
+#define GS_GUI_WIN_READIMAGE_B_HEX(hdc, lump, p_img) gs_gui_win_readimage_b_hex(hdc, # lump, lump, sizeof (lump), p_img)
 
 struct AuxImgB
 {
@@ -94,9 +100,10 @@ clean:
 	return r;
 }
 
-int gs_gui_win_readimage_b(
+int gs_gui_win_readimage_b_hex(
 	HDC hDc,
 	const std::string &FName,
+	const char *HexBuf, size_t LenHex,
 	struct AuxImgB *oImgB)
 {
 	int r = 0;
@@ -106,7 +113,7 @@ int gs_gui_win_readimage_b(
 	struct AuxImg Img = {};
 	HBITMAP hBitmap = NULL;
 
-	if (!!(r = gs_gui_readimage_file(FName, &Img)))
+	if (!!(r = gs_gui_readimage_hex(FName, std::string(HexBuf, LenHex), &Img)))
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_gui_win_bitmap_from_rgb(
@@ -214,6 +221,8 @@ int gs_gui_win_threadfunc()
 	MSG Msg = {};
 
 	struct AuxImgB ImgPbEmpty = {};
+	struct AuxImgB ImgPbFull = {};
+	struct AuxImgB ImgPbBlip = {};
 
 	/* NOTE: beware GetModuleHandle(NULL) caveat when called from DLL (should not apply here though) */
 	if (!(hInstance = GetModuleHandle(NULL)))
@@ -257,9 +266,13 @@ int gs_gui_win_threadfunc()
 		if (!(hDcStartup = GetDC(Hwnd)))
 			GS_ERR_CLEAN(1);
 
-		if (!!(r = gs_gui_win_readimage_b(hDcStartup, "imgpbempty_384_32_.data", &ImgPbEmpty)))
+		if (!!(r = GS_GUI_WIN_READIMAGE_B_HEX(hDcStartup, imgpbempty_384_32_, &ImgPbEmpty)))
 			GS_GOTO_CLEAN();
-		
+		if (!!(r = GS_GUI_WIN_READIMAGE_B_HEX(hDcStartup, imgpbfull_384_32_, &ImgPbFull)))
+			GS_GOTO_CLEAN();
+		if (!!(r = GS_GUI_WIN_READIMAGE_B_HEX(hDcStartup, imgpbblip_96_32_, &ImgPbBlip)))
+			GS_GOTO_CLEAN();
+
 		if (hDcStartup)
 			ReleaseDC(Hwnd, hDcStartup);
 	}
@@ -297,7 +310,7 @@ int gs_gui_win_threadfunc()
 			if (! FillRect(hDc, &ClearRect, BgBrush))
 				GS_ERR_CLEAN(1);
 
-			if (!!(r = gs_gui_win_drawimage_mask_p(hDc, GS_GUI_COLOR_MASK_RGB, &ImgPbEmpty, 0, 0, ImgPbEmpty.mWidth, ImgPbEmpty.mHeight, 0 + Cnt00, 64)))
+			if (!!(r = gs_gui_win_drawimage_mask_p(hDc, GS_GUI_COLOR_MASK_RGB, &ImgPbBlip, 0, 0, ImgPbBlip.mWidth, ImgPbBlip.mHeight, 0 + Cnt00, 64)))
 				GS_GOTO_CLEAN();
 
 			if (BgBrush)

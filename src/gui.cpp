@@ -92,8 +92,8 @@ int gs_gui_readimage_hex(
 	struct AuxImg Img = {};
 
 	std::string Data;
-	struct GsBypartCbDataString BypartData;
 
+	GS_BYPART_DATA_VAR(String, BypartData);
 	GS_BYPART_DATA_INIT(String, BypartData, &Data);
 
 	if (!!gs_config_decode_hex_c(HexStr.data(), HexStr.size(), &BypartData, gs_bypart_cb_String))
