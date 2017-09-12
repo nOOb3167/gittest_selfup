@@ -132,6 +132,10 @@ TARGET_INCLUDE_DIRECTORIES(gittest_ev2_serv PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS
 
 # gittest_ev2_selfupdate, gittest_ev2_selfupdate_clone
 
+GITTEST_COMMON_GENERATE(${CMAKE_SOURCE_DIR}/data imgpbempty_384_32_ .data)
+GITTEST_COMMON_GENERATE(${CMAKE_SOURCE_DIR}/data imgpbfull_384_32_ .data)
+GITTEST_COMMON_GENERATE(${CMAKE_SOURCE_DIR}/data imgpbblip_96_32_ .data)
+
 SET(GITTEST_EV2_SELFUPDATE_HEADERS
   include/gittest/gittest_ev2_test.h
   include/gittest/gui.h
@@ -144,6 +148,9 @@ SET(GITTEST_EV2_SELFUPDATE_SOURCES
   src/gittest_ev2_test_su.cpp
   src/gittest_ev2_common.cpp
   src/gui.cpp
+  imgpbempty_384_32_.h
+  imgpbfull_384_32_.h
+  imgpbblip_96_32_.h
   ${GITTEST_LIB_SOURCES}
 )
 IF (WIN32)
