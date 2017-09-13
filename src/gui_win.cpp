@@ -3,6 +3,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <random>
 
 #include <windows.h>
 #include <wingdi.h>
@@ -142,7 +143,7 @@ clean:
 	return r;
 }
 
-int gs_gui_win_drawimage_mask_p(
+int gs_gui_win_drawimage_mask_b(
 	HDC hDc,
 	UINT ColorTransparentRGB,
 	struct AuxImgB *ImgDraw,
@@ -160,8 +161,10 @@ int gs_gui_win_drawimage_mask_p(
 
 	hObjectOld = SelectObject(hDc2, ImgDraw->mBitmap);
 
-	if (! TransparentBlt(hDc, DestX, DestY, Width, Height, hDc2, SrcX, SrcY, Width, Height, ColorTransparentRGB))
-		GS_ERR_CLEAN(1);
+	/* TransparentBlt fails on zero dimensions */
+	if (Width != 0 && Height != 0)
+		if (! TransparentBlt(hDc, DestX, DestY, Width, Height, hDc2, SrcX, SrcY, Width, Height, ColorTransparentRGB))
+			GS_ERR_CLEAN(1);
 
 clean:
 	if (hObjectOld && hDc2)
@@ -170,6 +173,84 @@ clean:
 		DeleteDC(hDc2);
 
 	return r;
+}
+
+int gs_gui_win_clear_window(
+	HWND Hwnd,
+	HDC hDc)
+{
+	int r = 0;
+
+	RECT WindowRect = {};
+	RECT ClearRect = {};
+	HBRUSH BgBrush = NULL;
+
+	if (! GetWindowRect(Hwnd, &WindowRect))
+		GS_ERR_CLEAN(1);
+
+	ClearRect.left = 0;
+	ClearRect.top = 0;
+	ClearRect.right = WindowRect.right - WindowRect.left;
+	ClearRect.bottom = WindowRect.bottom - WindowRect.top;
+
+	if (! (BgBrush = CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF))))
+		GS_ERR_CLEAN(1);
+
+	if (! FillRect(hDc, &ClearRect, BgBrush))
+		GS_ERR_CLEAN(1);
+
+clean:
+	if (BgBrush)
+		DeleteObject(BgBrush);
+
+	return r;
+}
+
+int gs_gui_win_draw_progress_ratio(
+	HDC hDc,
+	struct AuxImgB *ImgPbEmpty,
+	struct AuxImgB *ImgPbFull,
+	int DestX, int DestY,
+	int RatioA, int RatioB)
+{
+	int r = 0;
+
+	float Ratio = 0.0f;
+	if (RatioB)
+		Ratio = (float)RatioA / RatioB;
+
+	if (!!(r = gs_gui_win_drawimage_mask_b(hDc, GS_GUI_COLOR_MASK_RGB, ImgPbEmpty, 0, 0, ImgPbEmpty->mWidth, ImgPbEmpty->mHeight, DestX, DestY)))
+		GS_GOTO_CLEAN();
+	if (!!(r = gs_gui_win_drawimage_mask_b(hDc, GS_GUI_COLOR_MASK_RGB, ImgPbFull, 0, 0, ImgPbFull->mWidth * Ratio, ImgPbFull->mHeight, DestX, DestY)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
+int gs_gui_win_draw_progress_blip(
+  HDC hDc,
+  struct AuxImgB *ImgPbEmpty,
+  struct AuxImgB *ImgPbBlip,
+  int DestX, int DestY,
+  int BlipCnt)
+{
+  int r = 0;
+
+  int SrcX = 0, DrawLeft = 0, DrawWidth = 0;
+
+  if (!!(r = gs_gui_progress_blip_calc(BlipCnt, ImgPbEmpty->mWidth, ImgPbBlip->mWidth, &SrcX, &DrawLeft, &DrawWidth)))
+	  GS_GOTO_CLEAN();
+
+  if (!!(r = gs_gui_win_drawimage_mask_b(hDc, GS_GUI_COLOR_MASK_RGB, ImgPbBlip, SrcX, 0, DrawWidth, ImgPbBlip->mHeight, DestX + DrawLeft, DestY)))
+	  GS_GOTO_CLEAN();
+  if (!!(r = gs_gui_win_drawimage_mask_b(hDc, GS_GUI_COLOR_MASK_RGB, ImgPbEmpty, 0, 0, ImgPbEmpty->mWidth, ImgPbEmpty->mHeight, DestX, DestY)))
+	  GS_GOTO_CLEAN();
+
+clean:
+
+  return r;
 }
 
 LRESULT CALLBACK WndProc(HWND Hwnd, UINT Msg, WPARAM wParam, LPARAM lParam)
@@ -211,7 +292,11 @@ int gs_gui_win_threadfunc()
 {
 	int r = 0;
 
+	static struct GsLogBase *Ll = GS_LOG_GET("progress_hint");
+
 	int FrameDurationMsec = 1000 / GS_GUI_WIN_FRAMERATE;
+
+	struct GsGuiProgress *Progress = NULL;
 
 	HINSTANCE hInstance = NULL;
 
@@ -223,6 +308,13 @@ int gs_gui_win_threadfunc()
 	struct AuxImgB ImgPbEmpty = {};
 	struct AuxImgB ImgPbFull = {};
 	struct AuxImgB ImgPbBlip = {};
+
+	Progress = new GsGuiProgress();
+	if (! (Progress->mProgressHintLog = GS_LOG_GET("progress_hint")))
+		GS_ERR_CLEAN(1);
+	Progress->mMode = 0; /*ratio*/
+	Progress->mRatioA = 0; Progress->mRatioB = 0;
+	Progress->mBlipValOld = 0; Progress->mBlipVal = 0; Progress->mBlipCnt = -1;
 
 	/* NOTE: beware GetModuleHandle(NULL) caveat when called from DLL (should not apply here though) */
 	if (!(hInstance = GetModuleHandle(NULL)))
@@ -280,6 +372,9 @@ int gs_gui_win_threadfunc()
 	while (true) {
 		static int Cnt00 = -1;
 		Cnt00++; Cnt00 = Cnt00 % 100;
+		static std::default_random_engine RandomEngine;
+		//{ log_guard_t Log(Ll); GS_LOG(I, PF, "RATIO %d OF %d", Cnt00, 100); }
+		{ log_guard_t Log(Ll); GS_LOG(I, PF, "BLIP %d", (int)RandomEngine()); }
 		auto TimePointStart = std::chrono::system_clock::now();
 		while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
 		{
@@ -287,34 +382,51 @@ int gs_gui_win_threadfunc()
 			DispatchMessage(&Msg);
 		}
 
+		if (!!(r = gs_gui_progress_update(Progress)))
+			GS_GOTO_CLEAN();
+
 		{
 			HDC hDc = NULL;
-			RECT WindowRect = {};
-			RECT ClearRect = {};
-			HBRUSH BgBrush = NULL;
 
 			if (!(hDc = GetDC(Hwnd)))
 				GS_ERR_CLEAN(1);
 
-			if (! GetWindowRect(Hwnd, &WindowRect))
-				GS_ERR_CLEAN(1);
-
-			ClearRect.left = 0;
-			ClearRect.top = 0;
-			ClearRect.right = WindowRect.right - WindowRect.left;
-			ClearRect.bottom = WindowRect.bottom - WindowRect.top;
-
-			if (! (BgBrush = CreateSolidBrush(RGB(0xFF, 0xFF, 0xFF))))
-				GS_ERR_CLEAN(1);
-
-			if (! FillRect(hDc, &ClearRect, BgBrush))
-				GS_ERR_CLEAN(1);
-
-			if (!!(r = gs_gui_win_drawimage_mask_p(hDc, GS_GUI_COLOR_MASK_RGB, &ImgPbBlip, 0, 0, ImgPbBlip.mWidth, ImgPbBlip.mHeight, 0 + Cnt00, 64)))
+			if (!!(r = gs_gui_win_clear_window(Hwnd, hDc)))
 				GS_GOTO_CLEAN();
 
-			if (BgBrush)
-				DeleteObject(BgBrush);
+			switch (Progress->mMode)
+			{
+			case 0:
+			{
+				if (!!(r = gs_gui_win_draw_progress_ratio(
+					hDc,
+					&ImgPbEmpty,
+					&ImgPbFull,
+					0, 32,
+					Progress->mRatioA, Progress->mRatioB)))
+				{
+					GS_GOTO_CLEAN();
+				}
+			}
+			break;
+
+			case 1:
+			{
+				if (!!(r = gs_gui_win_draw_progress_blip(
+					hDc,
+					&ImgPbEmpty,
+					&ImgPbBlip,
+					0, 96,
+					Progress->mBlipCnt)))
+				{
+					GS_GOTO_CLEAN();
+				}
+			}
+			break;
+
+			default:
+				GS_ASSERT(0);
+			}
 
 			if (hDc)
 				ReleaseDC(Hwnd, hDc);
