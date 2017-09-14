@@ -105,6 +105,86 @@ clean:
 	return r;
 }
 
+int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
+{
+	int r = 0;
+
+	const char *Data = NULL;
+	size_t LenHdr, LenData;
+
+	while (true) {
+		/* write callback designates 'dedicated write mode' on this bufferevent - in that case avoid crank */
+		if (bev_has_cb_write(Bev))
+			GS_ERR_NO_CLEAN(0);
+
+		if (!!(r = gs_ev_evbuffer_get_frame_try(bufferevent_get_input(Bev), &Data, &LenHdr, &LenData)))
+			GS_GOTO_CLEAN();
+
+		if (! Data)
+			break;
+
+		struct GsEvData Packet = { (uint8_t *) Data, LenData };
+
+		r = CtxBase->CbCrank(Bev, CtxBase, &Packet);
+		if (!!r && r != GS_ERRCODE_EXIT)
+			GS_GOTO_CLEAN();
+		if (r == GS_ERRCODE_EXIT)
+			GS_ERR_NO_CLEAN(r);		/* marshall GS_ERRCODE_EXIT out of this function */
+
+		if (!!(r = evbuffer_drain(bufferevent_get_input(Bev), LenHdr + LenData)))
+			GS_GOTO_CLEAN();
+	}
+
+noclean:
+
+clean:
+
+	return r;
+}
+
+bool bev_has_cb_write(struct bufferevent *Bev)
+{
+	bufferevent_data_cb Cb;
+	bufferevent_getcb(Bev, NULL, &Cb, NULL, NULL);
+	return !!Cb;
+}
+
+void bev_raise_cb_write(struct bufferevent *Bev)
+{
+	bufferevent_data_cb CbR;
+	bufferevent_data_cb CbW;
+	bufferevent_event_cb CbE;
+	void *CbA;
+	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
+	GS_ASSERT(! CbW);
+	bufferevent_setcb(Bev, CbR, bev_write_cb, CbE, CbA);
+}
+
+void bev_lower_cb_write(struct bufferevent *Bev)
+{
+	bufferevent_data_cb CbR;
+	bufferevent_data_cb CbW;
+	bufferevent_event_cb CbE;
+	void *CbA;
+	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
+	GS_ASSERT(!! CbW);
+	bufferevent_setcb(Bev, CbR, NULL, CbE, CbA);
+}
+
+int bev_lower_cb_write_ex(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
+{
+	int r = 0;
+
+	bev_lower_cb_write(Bev);
+
+	if (!!(r = gs_bev_read_aux(Bev, CtxBase)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
 void bev_event_cb(struct bufferevent *Bev, short What, void *CtxBaseV)
 {
 	int r = 0;
@@ -145,26 +225,31 @@ void bev_read_cb(struct bufferevent *Bev, void *CtxBaseV)
 	int r = 0;
 	struct GsEvCtx *CtxBase = (struct GsEvCtx *) CtxBaseV;
 
-	const char *Data = NULL;
-	size_t LenHdr, LenData;
-
-	if (!!(r = gs_ev_evbuffer_get_frame_try(bufferevent_get_input(Bev), &Data, &LenHdr, &LenData)))
-		assert(0);
-
-	if (Data) {
-		struct GsEvData Packet = { (uint8_t *) Data, LenData };
-
-		r = CtxBase->CbCrank(Bev, CtxBase, &Packet);
-		if (!!r && r != GS_ERRCODE_EXIT)
-			GS_GOTO_CLEAN();
-		if (r == GS_ERRCODE_EXIT)
-			if (!!(r = event_base_loopbreak(bufferevent_get_base(Bev))))
-				GS_GOTO_CLEAN();
-
-		if (!!(r = evbuffer_drain(bufferevent_get_input(Bev), LenHdr + LenData)))
+	r = gs_bev_read_aux(Bev, CtxBase);
+	if (!!r && r != GS_ERRCODE_EXIT)
+		GS_GOTO_CLEAN();
+	if (r == GS_ERRCODE_EXIT)
+		if (!!(r = event_base_loopbreak(bufferevent_get_base(Bev))))
 			GS_GOTO_CLEAN();
 
+clean:
+	if (!!r) {
+		CtxBase->mIsError = 1;
+
+		if (!!(event_base_loopbreak(bufferevent_get_base(Bev))))
+			GS_ASSERT(0);
 	}
+}
+
+void bev_write_cb(struct bufferevent *Bev, void *CtxBaseV)
+{
+	int r = 0;
+	struct GsEvCtx *CtxBase = (struct GsEvCtx *) CtxBaseV;
+
+	GS_ASSERT(bev_has_cb_write(Bev));
+
+	if (!!(r = CtxBase->CbWriteOnly(Bev, CtxBase)))
+		GS_GOTO_CLEAN();
 
 clean:
 	if (!!r) {

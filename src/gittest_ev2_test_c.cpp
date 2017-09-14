@@ -528,6 +528,7 @@ int gs_ev2_test_clntmain(
 	Ctx->base.CbConnect = gs_ev_clnt_state_crank3_connected;
 	Ctx->base.CbDisconnect = gs_ev_clnt_state_crank3_disconnected;
 	Ctx->base.CbCrank = gs_ev_clnt_state_crank3;
+	Ctx->base.CbWriteOnly = NULL;
 	Ctx->mCommonVars = CommonVars;
 	Ctx->mClntState = new ClntState();
 

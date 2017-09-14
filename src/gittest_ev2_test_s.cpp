@@ -51,6 +51,9 @@ static int gs_ev_serv_state_crank3(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase,
 	struct GsEvData *Packet);
+static int gs_ev_serv_state_writeonly(
+	struct bufferevent *Bev,
+	struct GsEvCtx *CtxBase);
 
 int gs_ev2_serv_state_service_request_blobs2(
 	struct bufferevent *Bev,
@@ -326,6 +329,21 @@ clean:
 	return r;
 }
 
+int gs_ev_serv_state_writeonly(
+	struct bufferevent *Bev,
+	struct GsEvCtx *CtxBase)
+{
+	int r = 0;
+
+	GS_ASSERT(bev_has_cb_write(Bev));
+
+	bev_lower_cb_write(Bev);
+
+clean:
+
+	return r;
+}
+
 int gs_ev2_test_servmain(struct GsAuxConfigCommonVars CommonVars)
 {
 	int r = 0;
@@ -339,6 +357,7 @@ int gs_ev2_test_servmain(struct GsAuxConfigCommonVars CommonVars)
 	Ctx->base.CbConnect = gs_ev_serv_state_crank3_connected;
 	Ctx->base.CbDisconnect = gs_ev_serv_state_crank3_disconnected;
 	Ctx->base.CbCrank = gs_ev_serv_state_crank3;
+	Ctx->base.CbWriteOnly = gs_ev_serv_state_writeonly;
 	Ctx->mCommonVars = CommonVars;
 
 	if (!!(r = gs_repo_init(CommonVars.RepoMainPathBuf, CommonVars.LenRepoMainPath, NULL)))

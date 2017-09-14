@@ -66,6 +66,9 @@ struct GsEvCtx
 		struct bufferevent *Bev,
 		struct GsEvCtx *CtxBase,
 		struct GsEvData *Packet);
+	int (*CbWriteOnly)(
+		struct bufferevent *Bev,
+		struct GsEvCtx *CtxBase);
 };
 
 enum gs_selfupdate_state_code_t {
@@ -127,8 +130,16 @@ int gs_ev_evbuffer_write_frame(
 	const char *Data,
 	size_t LenData);
 
+int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
+
+bool bev_has_cb_write(struct bufferevent *Bev);
+void bev_raise_cb_write(struct bufferevent *Bev);
+void bev_lower_cb_write(struct bufferevent *Bev);
+int bev_lower_cb_write_ex(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
+
 void bev_event_cb(struct bufferevent *Bev, short What, void *CtxBaseV);
 void bev_read_cb(struct bufferevent *Bev, void *CtxBaseV);
+void bev_write_cb(struct bufferevent *Bev, void *CtxBaseV);
 
 void evc_listener_cb(struct evconnlistener *Listener, evutil_socket_t Fd, struct sockaddr *Addr, int AddrLen, void *CtxBaseV);
 void evc_error_cb(struct evconnlistener *Listener, void *CtxBaseV);
