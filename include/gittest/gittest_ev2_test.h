@@ -8,6 +8,7 @@
 
 #include <gittest/config.h>
 
+#define GS_SELFUPDATE_ARG_MAINONLY "--xmainonly"
 #define GS_SELFUPDATE_ARG_CHILD "--xchild"
 #define GS_SELFUPDATE_ARG_VERSUB "--xversub"
 

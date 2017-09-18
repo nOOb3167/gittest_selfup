@@ -34,6 +34,8 @@ int gs_ev2_selfupdate_reexec()
 	ss << std::string(GS_SELFUPDATE_ARG_CHILD) << "\0";
 	out = ss.str();
 
+	GS_LOG(I, PF, "reexec [e=[%s], c=[%s]]", CurExeBuf, out.c_str());
+
 	if (!!(r = gs_process_start_ex(
 		CurExeBuf, LenCurExe,
 		out.data(), out.size())))
@@ -239,6 +241,7 @@ int main(int argc, char **argv)
 	struct GsConfMap *ConfMap = NULL;
 	struct GsAuxConfigCommonVars CommonVars = {};
 
+	uint32_t MainOnly = 0;
 	uint32_t HaveUpdateShouldQuit = 0;
 	uint32_t DoNotReExec = 0;
 
@@ -272,19 +275,23 @@ int main(int argc, char **argv)
 	//gs_gui_run();
 	//GS_ERR_CLEAN(1);
 
-	if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_VERSUB) == 0) {
-		printf(GS_CONFIG_DEFS_GITTEST_EV2_SELFUPDATE_VERSUB);
-		GS_ERR_NO_CLEAN(0);
-	}
-	else if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_CHILD) == 0) {
-		DoNotReExec = 1;
-	}
-
 	{
 		log_guard_t Log(GS_LOG_GET("selfup"));
 
-		if (!!(r = gs_ev2_selfupdate_full(CommonVars, &HaveUpdateShouldQuit)))
-			GS_GOTO_CLEAN();
+		if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_VERSUB) == 0) {
+			printf(GS_CONFIG_DEFS_GITTEST_EV2_SELFUPDATE_VERSUB);
+			GS_ERR_NO_CLEAN(0);
+		}
+		else if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_CHILD) == 0) {
+			DoNotReExec = 1;
+		}
+		else if (argc == 2 && strcmp(argv[1], GS_SELFUPDATE_ARG_MAINONLY) == 0) {
+			MainOnly = 1;
+		}
+
+		if (! MainOnly)
+			if (!!(r = gs_ev2_selfupdate_full(CommonVars, &HaveUpdateShouldQuit)))
+				GS_GOTO_CLEAN();
 
 		if (HaveUpdateShouldQuit) {
 			if (DoNotReExec)
@@ -306,7 +313,10 @@ noclean:
 clean:
 	GS_DELETE_F(&ConfMap, gs_conf_map_destroy);
 
-	gs_log_crash_handler_dump_global_log_list_suffix("_log", strlen("_log"));
+	if (DoNotReExec)
+		gs_log_crash_handler_dump_global_log_list_suffix("_log_xchild", strlen("_log_xchild"));
+	else
+		gs_log_crash_handler_dump_global_log_list_suffix("_log", strlen("_log"));
 
 	if (!!r)
 		EXIT_FAILURE;
