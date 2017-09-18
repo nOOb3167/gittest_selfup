@@ -680,6 +680,34 @@ int aux_frame_full_write_response_latest_selfupdate_blob(
 	return aux_frame_full_aux_write_oid(&FrameType, Oid, OidSize, cb, ctx);
 }
 
+/** a complete frame is not written - further writes necessary ('PayloadSize' more bytes) */
+int aux_frame_part_write_for_payload(
+	const GsFrameType &FrameType, uint32_t PayloadSize,
+	gs_bysize_cb_t cb, void *ctx)
+{
+	int r = 0;
+
+	GsFrameType Ft = FrameType;
+
+	uint32_t Offset = 0;
+	uint32_t BufferSize = GS_FRAME_HEADER_LEN + GS_FRAME_SIZE_LEN;
+	uint8_t *BufferData = NULL;
+
+	if (!!(r = cb(ctx, BufferSize, &BufferData)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = aux_frame_write_frametype(BufferData, BufferSize, Offset, &Offset, &Ft)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = aux_frame_write_size(BufferData, BufferSize, Offset, &Offset, GS_FRAME_SIZE_LEN, PayloadSize)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
+/** FIXME: unused code? */
 int aux_frame_read_oid_vec_cpp(
 	uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,
 	std::vector<git_oid> *oOidVec)

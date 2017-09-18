@@ -5,9 +5,18 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
+
 #include <sstream>
+#include <map>
 
 #include <git2.h>
+#include <git2/sys/memes.h>
+
+#include <io.h>  // FIXME: win32 specific
+#include <fcntl.h> //
+#include <sys/types.h> //
+#include <sys/stat.h> //
 
 #define EVENT2_VISIBILITY_STATIC_MSVC
 #include <event2/event.h>
@@ -24,16 +33,59 @@
 
 #include <gittest/gittest_ev2_test.h>
 
+struct GsEvCtxServWriteOnlyHead
+{
+	int mRefCount;
+
+	int mFd;
+	unsigned long long mSize;
+	unsigned long long mOffset;
+
+	void incref() { mRefCount++; }
+	void decref() { if (--mRefCount == 0 && mFd != -1) { _close(mFd); delete this; } }
+};
+
+struct GsEvCtxServWriteOnly
+{
+	std::string mRepositoryPath;
+	size_t      mSegmentSizeLimit;
+
+	std::vector<git_oid> mWriting;
+	int                  mWritingHead;
+	struct GsEvCtxServWriteOnlyHead *mHead;
+};
+
 struct GsEvCtxServ
 {
 	struct GsEvCtx base;
 	struct GsAuxConfigCommonVars mCommonVars;
 
+	std::map<struct bufferevent *, struct GsEvCtxServWriteOnly> mWriteOnly;
+
 	git_repository *mRepository = NULL;
 	git_repository *mRepositorySelfUpdate = NULL;
 };
 
+static int gs_ev2_ctx_serv_write_only_init(
+	struct GsEvCtxServ *Ctx,
+	struct bufferevent *Bev,
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	size_t SegmentSizeLimit,
+	const std::vector<git_oid> &Writing,
+	struct GsEvCtxServWriteOnly *ioWriteOnly);
+static void gs_ev2_ctx_serv_write_only_file_segment_cleanup_cb(struct evbuffer_file_segment const* Seg, int Flags, void * Ctx);
+static int gs_ev2_ctx_serv_write_only_advance_produce_segment(
+	struct GsEvCtxServWriteOnly *WriteOnly,
+	struct evbuffer_file_segment **oSeg,
+	unsigned long long *oFileSizeOnHeadChange);
 static int gs_ev2_serv_state_service_request_blobs2(
+	struct bufferevent *Bev,
+	struct GsEvCtxServ *Ctx,
+	struct GsEvData *Packet,
+	uint32_t OffsetSize,
+	git_repository *Repository,
+	const struct GsFrameType FrameTypeResponse);
+static int gs_ev2_serv_state_service_request_blobs3(
 	struct bufferevent *Bev,
 	struct GsEvCtxServ *Ctx,
 	struct GsEvData *Packet,
@@ -54,6 +106,123 @@ static int gs_ev_serv_state_crank3(
 static int gs_ev_serv_state_writeonly(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase);
+
+int gs_ev2_ctx_serv_write_only_init(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	size_t SegmentSizeLimit,
+	const std::vector<git_oid> &Writing,
+	struct GsEvCtxServWriteOnly *ioWriteOnly)
+{
+	int r = 0;
+
+	ioWriteOnly->mRepositoryPath = std::string(RepositoryPathBuf, LenRepositoryPath);
+	ioWriteOnly->mSegmentSizeLimit = SegmentSizeLimit;
+	ioWriteOnly->mWriting = Writing;
+	ioWriteOnly->mWritingHead = -1;
+	ioWriteOnly->mHead = NULL;
+
+clean:
+
+	return r;
+}
+
+void gs_ev2_ctx_serv_write_only_file_segment_cleanup_cb(struct evbuffer_file_segment const* Seg, int Flags, void * Ctx)
+{
+	struct GsEvCtxServWriteOnlyHead *Head = (struct GsEvCtxServWriteOnlyHead *) Ctx;
+	Head->decref();
+}
+
+/** oFileSizeOnHeadChange: file size on head change, '-1' otherwise */
+int gs_ev2_ctx_serv_write_only_advance_produce_segment(
+	struct GsEvCtxServWriteOnly *WriteOnly,
+	struct evbuffer_file_segment **oSeg,
+	unsigned long long *oFileSizeOnHeadChange)
+{
+	int r = 0;
+
+	bool WriteOnlyHaveAcquired = false;
+
+	struct evbuffer_file_segment *Seg = NULL;
+	unsigned long long FileSizeOnHeadChange = -1;
+
+	size_t RemainingLimited = 0;
+
+	if (WriteOnly->mHead) {
+		GS_ASSERT(WriteOnly->mHead->mOffset <= WriteOnly->mHead->mSize);
+		RemainingLimited = GS_MIN(WriteOnly->mHead->mSize - WriteOnly->mHead->mOffset, WriteOnly->mSegmentSizeLimit);
+		if (! RemainingLimited) {
+			WriteOnly->mHead->decref();
+			WriteOnly->mHead = NULL;
+		}
+	}
+	
+	if (! WriteOnly->mHead) {
+		char PathBuf[512] = {};
+		size_t LenPath = 0;
+		int Fd = -1;
+		struct _stat Stat = {};
+
+		if (WriteOnly->mWritingHead++ >= WriteOnly->mWriting.size())
+			GS_ERR_NO_CLEAN(0);
+
+		if (!!(r = git_memes_objpath(
+			WriteOnly->mRepositoryPath.data(), WriteOnly->mRepositoryPath.size(),
+			& WriteOnly->mWriting[WriteOnly->mWritingHead],
+			PathBuf, sizeof PathBuf, &LenPath)))
+		{
+			GS_GOTO_CLEAN();
+		}
+
+		if (-1 == (Fd = _open(PathBuf, _O_RDONLY | _O_BINARY)))
+			GS_ERR_CLEAN(1);
+
+		if (-1 == _fstat(Fd, &Stat))
+			GS_ERR_CLEAN(1);
+
+		if (! ((Stat.st_mode & _S_IFMT) == _S_IFREG))
+			GS_ERR_CLEAN(1);
+
+		WriteOnlyHaveAcquired = true;
+
+		FileSizeOnHeadChange = Stat.st_size;
+
+		WriteOnly->mHead = new GsEvCtxServWriteOnlyHead();
+		WriteOnly->mHead->mRefCount = 1;
+		WriteOnly->mHead->mFd = Fd;
+		WriteOnly->mHead->mSize = Stat.st_size;
+		WriteOnly->mHead->mOffset = 0;
+
+		RemainingLimited = GS_MIN(WriteOnly->mHead->mSize, WriteOnly->mSegmentSizeLimit);
+	}
+
+	GS_ASSERT(WriteOnly->mHead);
+
+	if (!(Seg = evbuffer_file_segment_new(WriteOnly->mHead->mFd, WriteOnly->mHead->mOffset, RemainingLimited, 0)))
+		GS_ERR_CLEAN(1);
+	evbuffer_file_segment_add_cleanup_cb(Seg, gs_ev2_ctx_serv_write_only_file_segment_cleanup_cb, WriteOnly->mHead);
+	WriteOnly->mHead->mOffset += RemainingLimited;
+	WriteOnly->mHead->incref();
+
+noclean:
+	if (oSeg)
+		*oSeg = Seg;
+
+	if (oFileSizeOnHeadChange)
+		*oFileSizeOnHeadChange = FileSizeOnHeadChange;
+
+clean:
+	if (!!r) {
+		if (Seg)
+			evbuffer_file_segment_free(Seg);
+
+		if (WriteOnlyHaveAcquired) {
+			WriteOnly->mHead->decref();
+			WriteOnly->mHead = NULL;
+		}
+	}
+
+	return r;
+}
 
 int gs_ev2_serv_state_service_request_blobs2(
 	struct bufferevent *Bev,
@@ -114,6 +283,68 @@ int gs_ev2_serv_state_service_request_blobs2(
 
 	if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), ResponseBuffer.data(), ResponseBuffer.size())))
 		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
+int gs_ev2_serv_state_service_request_blobs3(
+	struct bufferevent *Bev,
+	struct GsEvCtxServ *Ctx,
+	struct GsEvData *Packet,
+	uint32_t OffsetSize,
+	git_repository *Repository,
+	const struct GsFrameType FrameTypeResponse)
+{
+	int r = 0;
+
+	const char *RepositoryPathBuf = NULL;
+	size_t LenRepositoryPath = 0;
+
+	std::string ResponseBuffer;
+	uint32_t Offset = OffsetSize;
+	uint32_t LengthLimit = 0;
+	std::vector<git_oid> BloblistRequested;
+	std::string SizeBufferBlob;
+	std::string ObjectBufferBlob;
+
+	size_t ServBlobSoftSizeLimit = Ctx->mCommonVars.ServBlobSoftSizeLimit;
+	size_t NumUntilSizeLimit = 0;
+
+	RepositoryPathBuf = git_repository_path(Repository);
+	LenRepositoryPath = strlen(RepositoryPathBuf);
+
+	GS_BYPART_DATA_VAR(String, BysizeResponseBuffer);
+	GS_BYPART_DATA_INIT(String, BysizeResponseBuffer, &ResponseBuffer);
+
+	GS_BYPART_DATA_VAR(OidVector, BypartBloblistRequested);
+	GS_BYPART_DATA_INIT(OidVector, BypartBloblistRequested, &BloblistRequested);
+
+	if (!!(r = aux_frame_read_size_limit(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_SIZE_LEN, &LengthLimit)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = aux_frame_read_oid_vec(Packet->data, LengthLimit, Offset, &Offset, &BypartBloblistRequested, gs_bypart_cb_OidVector)))
+		GS_GOTO_CLEAN();
+
+	/* the client may be requesting many (and large) blobs
+	   so we have a size limit (for transmission in one response) */
+
+	if (!!(r = aux_objects_until_sizelimit(Repository, BloblistRequested.data(), BloblistRequested.size(), ServBlobSoftSizeLimit, &NumUntilSizeLimit)))
+		GS_GOTO_CLEAN();
+
+	/* if none made it under the size limit, make sure we send at least one, so that progress is made */
+
+	if (NumUntilSizeLimit == 0)
+		NumUntilSizeLimit = GS_CLAMP(BloblistRequested.size(), 0, 1);
+
+	BloblistRequested.resize(NumUntilSizeLimit);
+
+	// FIXME: reusing size limit with different semantics - have a separate one
+	if (!!(r = gs_ev2_ctx_serv_write_only_init(RepositoryPathBuf, LenRepositoryPath, ServBlobSoftSizeLimit, BloblistRequested, & Ctx->mWriteOnly[Bev])))
+		GS_GOTO_CLEAN();
+
+	bev_raise_cb_write(Bev);
 
 clean:
 
@@ -262,6 +493,21 @@ int gs_ev_serv_state_crank3(
 	}
 	break;
 
+	case GS_FRAME_TYPE_REQUEST_BLOBS3:
+	{
+		if (!!(r = gs_ev2_serv_state_service_request_blobs3(
+			Bev,
+			Ctx,
+			Packet,
+			OffsetSize,
+			Ctx->mRepository,
+			GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
+		{
+			GS_GOTO_CLEAN();
+		}
+	}
+	break;
+
 	case GS_FRAME_TYPE_REQUEST_BLOBS:
 	{
 		if (!!(r = gs_ev2_serv_state_service_request_blobs2(
@@ -335,9 +581,36 @@ int gs_ev_serv_state_writeonly(
 {
 	int r = 0;
 
-	GS_ASSERT(bev_has_cb_write(Bev));
+	struct GsEvCtxServ *Ctx = (struct GsEvCtxServ *) CtxBase;
 
-	bev_lower_cb_write(Bev);
+	struct evbuffer_file_segment *Seg = NULL;
+	unsigned long long FileSizeOnHeadChange = -1;
+
+	GS_ASSERT(bev_has_cb_write(Bev));
+	GS_ASSERT(Ctx->mWriteOnly.find(Bev) != Ctx->mWriteOnly.end());
+
+	if (!!(r = gs_ev2_ctx_serv_write_only_advance_produce_segment(& Ctx->mWriteOnly[Bev], &Seg, &FileSizeOnHeadChange)))
+		GS_GOTO_CLEAN();
+
+	if (FileSizeOnHeadChange != -1) {
+		std::string Buffer;
+		GS_BYPART_DATA_VAR(String, BpBuffer);
+		GS_BYPART_DATA_INIT(String, BpBuffer, &Buffer);
+
+		if (!!(r = aux_frame_part_write_for_payload(GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3), FileSizeOnHeadChange, gs_bysize_cb_String, &BpBuffer)))
+			GS_GOTO_CLEAN();
+
+		if (!!(r = evbuffer_add(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
+			GS_GOTO_CLEAN();
+	}
+
+	if (Seg) {
+		if (!!(r = evbuffer_add_file_segment(bufferevent_get_output(Bev), Seg, 0, -1)))
+			GS_GOTO_CLEAN();
+	}
+	else {
+		bev_lower_cb_write(Bev);
+	}
 
 clean:
 

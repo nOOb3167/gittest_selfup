@@ -25,6 +25,8 @@
 #define GS_FRAME_TYPE_RESPONSE_BLOBS_SELFUPDATE 10
 #define GS_FRAME_TYPE_REQUEST_LATEST_SELFUPDATE_BLOB 11
 #define GS_FRAME_TYPE_RESPONSE_LATEST_SELFUPDATE_BLOB 12
+#define GS_FRAME_TYPE_REQUEST_BLOBS3 13
+#define GS_FRAME_TYPE_RESPONSE_BLOBS3 14
 
 #define GS_FRAME_TYPE_DECL2(name) GS_FRAME_TYPE_ ## name
 #define GS_FRAME_TYPE_DECL(name) aux_frametype_make( # name , GS_FRAME_TYPE_DECL2(name) )
@@ -44,6 +46,8 @@
 		GS_FRAME_TYPE_DECL(RESPONSE_BLOBS_SELFUPDATE),       \
 		GS_FRAME_TYPE_DECL(REQUEST_LATEST_SELFUPDATE_BLOB),  \
 		GS_FRAME_TYPE_DECL(RESPONSE_LATEST_SELFUPDATE_BLOB), \
+		GS_FRAME_TYPE_DECL(REQUEST_BLOBS3),                  \
+		GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3),                 \
 	};                                                       \
 	size_t Len ## VARNAME = sizeof (VARNAME) / sizeof *(VARNAME);
 
@@ -161,6 +165,10 @@ int aux_frame_full_write_request_latest_selfupdate_blob(
 	gs_bysize_cb_t cb, void *ctx);
 int aux_frame_full_write_response_latest_selfupdate_blob(
 	uint8_t *Oid, uint32_t OidSize,
+	gs_bysize_cb_t cb, void *ctx);
+
+int aux_frame_part_write_for_payload(
+	const GsFrameType &FrameType, uint32_t PayloadSize,
 	gs_bysize_cb_t cb, void *ctx);
 
 #ifdef __cplusplus
