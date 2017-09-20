@@ -649,6 +649,15 @@ int aux_frame_full_write_request_blobs_selfupdate(
 	return aux_frame_full_aux_write_oid_vec(&FrameType, OidVecStrided, cb, ctx);
 }
 
+int aux_frame_full_write_request_blobs3(
+	GsStrided OidVecStrided,
+	gs_bysize_cb_t cb, void *ctx)
+{
+	static GsFrameType FrameType = GS_FRAME_TYPE_DECL(REQUEST_BLOBS3);
+
+	return aux_frame_full_aux_write_oid_vec(&FrameType, OidVecStrided, cb, ctx);
+}
+
 int aux_frame_full_write_response_blobs(
 	const GsFrameType &FrameType, uint32_t PairedVecLen,
 	uint8_t *SizeBufferBlobData, uint32_t SizeBufferBlobSize,

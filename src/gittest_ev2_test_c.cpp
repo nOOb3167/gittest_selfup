@@ -12,6 +12,8 @@
 #include <chrono>
 
 #include <git2.h>
+#include <git2/sys/memes.h>
+#include <git2/buffer.h>
 
 #define EVENT2_VISIBILITY_STATIC_MSVC
 #include <event2/event.h>
@@ -29,6 +31,12 @@
 #include <gittest/gittest_ev2_test.h>
 #include <gittest/gittest_ev2_test_c.h>
 
+static int gs_ev_clnt_state_received_oneshot_blob_cond(
+	struct bufferevent *Bev,
+	struct GsEvCtxClnt *Ctx,
+	struct GsEvData *Packet,
+	int *oIsHandledBy);
+
 static int gs_ev_clnt_state_crank3_connected(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase);
@@ -40,6 +48,67 @@ static int gs_ev_clnt_state_crank3(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase,
 	struct GsEvData *Packet);
+
+int gs_ev_clnt_state_received_oneshot_blob_cond(
+	struct bufferevent *Bev,
+	struct GsEvCtxClnt *Ctx,
+	struct GsEvData *Packet,
+	int *oIsHandledBy)
+{
+	int r = 0;
+
+	int IsHandledBy = 0;
+
+	uint32_t Offset = 0;
+	uint32_t LengthLimit = 0;
+
+	git_oid OidReceivedHdr = {};
+	git_oid OidReceivedDat = {};
+	git_buf Inflated = {};
+	git_otype Type = GIT_OBJ_BAD;
+	size_t BlobOffset;
+	size_t BlobSize;
+
+	if (!!(r = aux_frame_ensure_frametype(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
+		GS_ERR_NO_CLEAN(0);
+
+	IsHandledBy = 1;
+
+	GS_LOG(I, S, "receiving oneshot blob");
+
+	if (!!(r = aux_frame_read_size_limit(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_SIZE_LEN, &LengthLimit)))
+		GS_GOTO_CLEAN();
+
+	GS_ASSERT(LengthLimit == Packet->dataLength);
+
+	if (!!(r = aux_frame_read_oid(Packet->data, Packet->dataLength, Offset, &Offset, OidReceivedHdr.id, GIT_OID_RAWSZ)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = git_memes_deflate((const char *) Packet->data + Offset, LengthLimit - Offset, &Inflated, &Type, &BlobOffset, &BlobSize)))
+		GS_GOTO_CLEAN();
+
+	if (Type != GIT_OBJ_BLOB)
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = git_odb_hash(&OidReceivedDat, Inflated.ptr + BlobOffset, BlobSize, Type)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = git_oid_cmp(&OidReceivedHdr, &OidReceivedDat)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = aux_deserialize_object(* Ctx->mClntState->mRepositoryT, Inflated.ptr + BlobOffset, BlobSize, Type, &OidReceivedHdr)))
+		GS_GOTO_CLEAN();
+
+	Ctx->mClntState->mReceivedOneShotBlob->push_back(OidReceivedHdr);
+
+noclean:
+	if (oIsHandledBy)
+		*oIsHandledBy = IsHandledBy;
+
+clean:
+
+	return r;
+}
 
 int gs_ev_clnt_state_crank3_connected(
 	struct bufferevent *Bev,
@@ -109,6 +178,14 @@ int gs_ev_clnt_state_crank3(
 	struct GsEvCtxClnt *Ctx = (struct GsEvCtxClnt *) CtxBase;
 
 	uint32_t Code = 0;
+
+	int IsHandledBy = 0;
+
+	if (!!(r = gs_ev_clnt_state_received_oneshot_blob_cond(Bev, Ctx, Packet, &IsHandledBy)))
+		GS_GOTO_CLEAN();
+
+	if (IsHandledBy)
+		GS_ERR_NO_CLEAN(0);
 
 process_another_state_label:
 
@@ -268,6 +345,17 @@ process_another_state_label:
 		if (!!(r = gs_strided_for_oid_vec_cpp(Ctx->mClntState->mMissingBloblist.get(), &MissingBloblistStrided)))
 			GS_GOTO_CLEAN();
 
+		{
+			std::string B2;
+			GS_BYPART_DATA_VAR(String, BB);
+			GS_BYPART_DATA_INIT(String, BB, &B2);
+			if (!!(r = aux_frame_full_write_request_blobs3(MissingBloblistStrided, gs_bysize_cb_String, &BB)))
+				GS_GOTO_CLEAN();
+
+			if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), B2.data(), B2.size())))
+				GS_GOTO_CLEAN();
+		}
+
 		if (!!(r = aux_frame_full_write_request_blobs(MissingBloblistStrided, gs_bysize_cb_String, &BysizeBuffer)))
 			GS_GOTO_CLEAN();
 
@@ -414,7 +502,7 @@ process_another_state_label:
 
 	case GS_CLNT_STATE_CODE_NEED_NOTHING:
 	{
-		GS_ERR_NO_CLEAN(GS_ERRCODE_EXIT);
+		//GS_ERR_NO_CLEAN(GS_ERRCODE_EXIT);
 	}
 	break;
 
@@ -434,6 +522,8 @@ int clnt_state_make_default(ClntState *oState) {
 
 	State.mWrittenBlob = sp<std::vector<git_oid> >(new std::vector<git_oid>());
 	State.mWrittenTree = sp<std::vector<git_oid> >(new std::vector<git_oid>());
+
+	State.mReceivedOneShotBlob = sp<std::vector<git_oid> >(new std::vector<git_oid>());
 
 	if (oState)
 		*oState = State;

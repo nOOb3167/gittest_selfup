@@ -156,6 +156,9 @@ int aux_frame_full_write_request_blobs(
 int aux_frame_full_write_request_blobs_selfupdate(
 	GsStrided OidVecStrided,
 	gs_bysize_cb_t cb, void *ctx);
+int aux_frame_full_write_request_blobs3(
+	GsStrided OidVecStrided,
+	gs_bysize_cb_t cb, void *ctx);
 int aux_frame_full_write_response_blobs(
 	const GsFrameType &FrameType, uint32_t PairedVecLen,
 	uint8_t *SizeBufferBlobData, uint32_t SizeBufferBlobSize,

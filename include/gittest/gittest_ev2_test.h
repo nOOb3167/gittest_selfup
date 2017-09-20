@@ -130,12 +130,15 @@ int gs_ev_evbuffer_write_frame(
 	struct evbuffer *Ev,
 	const char *Data,
 	size_t LenData);
+int gs_ev_evbuffer_write_frame_outer_header(
+	struct evbuffer *Ev,
+	size_t LenData);
 
 int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
 
 bool bev_has_cb_write(struct bufferevent *Bev);
-void bev_raise_cb_write(struct bufferevent *Bev);
-void bev_lower_cb_write(struct bufferevent *Bev);
+int bev_raise_cb_write(struct bufferevent *Bev);
+int bev_lower_cb_write(struct bufferevent *Bev);
 int bev_lower_cb_write_ex(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
 
 void bev_event_cb(struct bufferevent *Bev, short What, void *CtxBaseV);

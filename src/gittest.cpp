@@ -482,6 +482,33 @@ clean:
 	return r;
 }
 
+int aux_deserialize_object(
+	git_repository *RepositoryT,
+	const char *DataBuf, size_t LenData,
+	git_otype Type,
+	git_oid *CheckOidOpt)
+{
+	int r = 0;
+
+	git_odb *OdbT = NULL;
+	git_oid WrittenOid = {};
+
+	if (!!(r = git_repository_odb(&OdbT, RepositoryT)))
+		goto clean;
+
+	if (!!(r = git_odb_write(&WrittenOid, OdbT, DataBuf, LenData, Type)))
+		GS_GOTO_CLEAN();
+
+	if (CheckOidOpt)
+		if (!!(r = git_oid_cmp(CheckOidOpt, &WrittenOid)))
+			GS_GOTO_CLEAN();
+
+clean:
+	git_odb_free(OdbT);
+
+	return r;
+}
+
 int aux_deserialize_objects(
 	git_repository *RepositoryT,
 	uint8_t *DataStartSizeBuffer, uint32_t DataLengthSizeBuffer, uint32_t OffsetSizeBuffer,

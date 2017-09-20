@@ -54,6 +54,11 @@ int aux_serialize_objects(
 int serv_serialize_trees(git_repository *Repository, std::vector<git_oid> *TreeOid, std::string *oSizeBuffer, std::string *oTreeBuffer);
 int serv_serialize_blobs(git_repository *Repository, std::vector<git_oid> *BlobOid, std::string *oSizeBuffer, std::string *oBlobBuffer);
 int aux_deserialize_sizebuffer(uint8_t *DataStart, uint32_t DataLength, uint32_t OffsetSizeBuffer, uint32_t SizeVecLen, std::vector<uint32_t> *oSizeVector, size_t *oCumulativeSize);
+int aux_deserialize_object(
+	git_repository *RepositoryT,
+	const char *DataBuf, size_t LenData,
+	git_otype Type,
+	git_oid *CheckOidOpt);
 int aux_deserialize_objects(
 	git_repository *RepositoryT,
 	uint8_t *DataStartSizeBuffer, uint32_t DataLengthSizeBuffer, uint32_t OffsetSizeBuffer,

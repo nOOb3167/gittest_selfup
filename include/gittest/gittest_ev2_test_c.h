@@ -38,6 +38,8 @@ struct ClntState
 	std::shared_ptr<std::vector<git_oid> > mWrittenTree;
 
 	std::shared_ptr<git_oid> mUpdatedRefOid;
+
+	std::shared_ptr<std::vector<git_oid> > mReceivedOneShotBlob;
 };
 
 struct GsEvCtxClnt

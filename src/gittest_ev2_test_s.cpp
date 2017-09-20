@@ -162,7 +162,7 @@ int gs_ev2_ctx_serv_write_only_advance_produce_segment(
 		int Fd = -1;
 		struct _stat Stat = {};
 
-		if (WriteOnly->mWritingHead++ >= WriteOnly->mWriting.size())
+		if (++WriteOnly->mWritingHead >= WriteOnly->mWriting.size())
 			GS_ERR_NO_CLEAN(0);
 
 		if (!!(r = git_memes_objpath(
@@ -195,7 +195,7 @@ int gs_ev2_ctx_serv_write_only_advance_produce_segment(
 		RemainingLimited = GS_MIN(WriteOnly->mHead->mSize, WriteOnly->mSegmentSizeLimit);
 	}
 
-	GS_ASSERT(WriteOnly->mHead);
+	GS_ASSERT(!! WriteOnly->mHead);
 
 	if (!(Seg = evbuffer_file_segment_new(WriteOnly->mHead->mFd, WriteOnly->mHead->mOffset, RemainingLimited, 0)))
 		GS_ERR_CLEAN(1);
@@ -344,7 +344,8 @@ int gs_ev2_serv_state_service_request_blobs3(
 	if (!!(r = gs_ev2_ctx_serv_write_only_init(RepositoryPathBuf, LenRepositoryPath, ServBlobSoftSizeLimit, BloblistRequested, & Ctx->mWriteOnly[Bev])))
 		GS_GOTO_CLEAN();
 
-	bev_raise_cb_write(Bev);
+	if (!!(r = bev_raise_cb_write(Bev)))
+		GS_GOTO_CLEAN();
 
 clean:
 
@@ -589,18 +590,28 @@ int gs_ev_serv_state_writeonly(
 	GS_ASSERT(bev_has_cb_write(Bev));
 	GS_ASSERT(Ctx->mWriteOnly.find(Bev) != Ctx->mWriteOnly.end());
 
-	if (!!(r = gs_ev2_ctx_serv_write_only_advance_produce_segment(& Ctx->mWriteOnly[Bev], &Seg, &FileSizeOnHeadChange)))
+	struct GsEvCtxServWriteOnly *WriteOnly = & Ctx->mWriteOnly[Bev];
+
+	if (!!(r = gs_ev2_ctx_serv_write_only_advance_produce_segment(WriteOnly, &Seg, &FileSizeOnHeadChange)))
 		GS_GOTO_CLEAN();
 
 	if (FileSizeOnHeadChange != -1) {
+		size_t PayloadLen = GIT_OID_RAWSZ + FileSizeOnHeadChange;
+
 		std::string Buffer;
 		GS_BYPART_DATA_VAR(String, BpBuffer);
 		GS_BYPART_DATA_INIT(String, BpBuffer, &Buffer);
 
-		if (!!(r = aux_frame_part_write_for_payload(GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3), FileSizeOnHeadChange, gs_bysize_cb_String, &BpBuffer)))
+		if (!!(r = aux_frame_part_write_for_payload(GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3), PayloadLen, gs_bysize_cb_String, &BpBuffer)))
+			GS_GOTO_CLEAN();
+
+		if (!!(r = gs_ev_evbuffer_write_frame_outer_header(bufferevent_get_output(Bev), Buffer.size() + PayloadLen)))
 			GS_GOTO_CLEAN();
 
 		if (!!(r = evbuffer_add(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
+			GS_GOTO_CLEAN();
+
+		if (!!(r = evbuffer_add(bufferevent_get_output(Bev), WriteOnly->mWriting[WriteOnly->mWritingHead].id, GIT_OID_RAWSZ)))
 			GS_GOTO_CLEAN();
 	}
 
@@ -609,10 +620,13 @@ int gs_ev_serv_state_writeonly(
 			GS_GOTO_CLEAN();
 	}
 	else {
-		bev_lower_cb_write(Bev);
+		if (!!(r = bev_lower_cb_write_ex(Bev, CtxBase)))
+			GS_GOTO_CLEAN();
 	}
 
 clean:
+	if (Seg)
+		evbuffer_file_segment_free(Seg);
 
 	return r;
 }

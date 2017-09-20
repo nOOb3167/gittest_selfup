@@ -52,7 +52,7 @@ int gs_ev_evbuffer_get_frame_try(
 	if (DataH) {
 		uint32_t FrameDataLen = 0;
 		if (memcmp(Magic, DataH, LenMagic) != 0)
-			GS_ERR_CLEAN(1);
+			GS_ERR_CLEAN_L(1, I, PF, "frame magic mismatch [magic=[%s], have=[%.*s]]", Magic, LenMagic, DataH);
 		aux_LE_to_uint32(&FrameDataLen, DataH + LenMagic, sizeof(uint32_t));
 		const char *DataF = (const char *) evbuffer_pullup(Ev, LenMagic + sizeof(uint32_t) + FrameDataLen);
 		if (DataF) {
@@ -105,6 +105,30 @@ clean:
 	return r;
 }
 
+int gs_ev_evbuffer_write_frame_outer_header(
+	struct evbuffer *Ev,
+	size_t LenData)
+{
+	int r = 0;
+
+	const char Magic[] = "FRAME";
+	size_t LenMagic = sizeof Magic - 1;
+
+	char cFrameDataLen[sizeof(uint32_t)];
+
+	aux_uint32_to_LE(LenData, cFrameDataLen, sizeof cFrameDataLen);
+
+	if (!!(r = evbuffer_add(Ev, Magic, LenMagic)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = evbuffer_add(Ev, cFrameDataLen, sizeof cFrameDataLen)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
 int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
 {
 	int r = 0;
@@ -149,33 +173,60 @@ bool bev_has_cb_write(struct bufferevent *Bev)
 	return !!Cb;
 }
 
-void bev_raise_cb_write(struct bufferevent *Bev)
+int bev_raise_cb_write(struct bufferevent *Bev)
 {
+	int r = 0;
+
 	bufferevent_data_cb CbR;
 	bufferevent_data_cb CbW;
 	bufferevent_event_cb CbE;
 	void *CbA;
+
 	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
-	GS_ASSERT(! CbW);
-	bufferevent_setcb(Bev, CbR, bev_write_cb, CbE, CbA);
+	bufferevent_setcb(Bev, NULL, bev_write_cb, CbE, CbA);
+
+	GS_ASSERT(!! CbR && ! CbW);
+
+	if (!!(r = bufferevent_disable(Bev, EV_READ)))
+		GS_GOTO_CLEAN();
+	if (!!(r = bufferevent_enable(Bev, EV_WRITE)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
 }
 
-void bev_lower_cb_write(struct bufferevent *Bev)
+int bev_lower_cb_write(struct bufferevent *Bev)
 {
+	int r = 0;
+
 	bufferevent_data_cb CbR;
 	bufferevent_data_cb CbW;
 	bufferevent_event_cb CbE;
 	void *CbA;
+
 	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
-	GS_ASSERT(!! CbW);
-	bufferevent_setcb(Bev, CbR, NULL, CbE, CbA);
+	bufferevent_setcb(Bev, bev_read_cb, NULL, CbE, CbA);
+
+	GS_ASSERT(! CbR && !! CbW);
+
+	if (!!(r = bufferevent_disable(Bev, EV_WRITE)))
+		GS_GOTO_CLEAN();
+	if (!!(r = bufferevent_enable(Bev, EV_READ)))
+		GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
 }
 
 int bev_lower_cb_write_ex(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
 {
 	int r = 0;
 
-	bev_lower_cb_write(Bev);
+	if (!!(r = bev_lower_cb_write(Bev)))
+		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_bev_read_aux(Bev, CtxBase)))
 		GS_GOTO_CLEAN();
