@@ -345,18 +345,7 @@ process_another_state_label:
 		if (!!(r = gs_strided_for_oid_vec_cpp(Ctx->mClntState->mMissingBloblist.get(), &MissingBloblistStrided)))
 			GS_GOTO_CLEAN();
 
-		{
-			std::string B2;
-			GS_BYPART_DATA_VAR(String, BB);
-			GS_BYPART_DATA_INIT(String, BB, &B2);
-			if (!!(r = aux_frame_full_write_request_blobs3(MissingBloblistStrided, gs_bysize_cb_String, &BB)))
-				GS_GOTO_CLEAN();
-
-			if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), B2.data(), B2.size())))
-				GS_GOTO_CLEAN();
-		}
-
-		if (!!(r = aux_frame_full_write_request_blobs(MissingBloblistStrided, gs_bysize_cb_String, &BysizeBuffer)))
+		if (!!(r = aux_frame_full_write_request_blobs3(MissingBloblistStrided, gs_bysize_cb_String, &BysizeBuffer)))
 			GS_GOTO_CLEAN();
 
 		if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
@@ -366,72 +355,47 @@ process_another_state_label:
 
 	case GS_CLNT_STATE_CODE_NEED_WRITTEN_BLOB_AND_TREE:
 	{
-		sp<std::vector<git_oid> > WrittenBlob(new std::vector<git_oid>);
-		sp<std::vector<git_oid> > WrittenTree(new std::vector<git_oid>);
-		sp<GsPacketWithOffset> PacketBlobWO(new GsPacketWithOffset);
-
-		// FIXME: leak
-		PacketBlobWO->mPacket = new GsPacket();
-		PacketBlobWO->mPacket->data = new uint8_t[Packet->dataLength];
-		PacketBlobWO->mPacket->dataLength = Packet->dataLength;
-		memmove(PacketBlobWO->mPacket->data, Packet->data, Packet->dataLength);
-
 		std::string Buffer;
 		uint32_t Offset = 0;
-		uint32_t LengthLimit = 0;
-
-		struct GsStrided MissingBloblistStrided = {};
-
-		uint32_t BufferBlobLen = 0;
-		uint32_t BufferTreeLen = 0;
 
 		GS_BYPART_DATA_VAR(String, BysizeBuffer);
 		GS_BYPART_DATA_INIT(String, BysizeBuffer, &Buffer);
 
-		if (!!(r = aux_frame_ensure_frametype(PacketBlobWO->mPacket->data, PacketBlobWO->mPacket->dataLength, Offset, &Offset, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS))))
+		if (!!(r = aux_frame_ensure_frametype(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3_DONE))))
 			GS_GOTO_CLEAN();
 
-		if (!!(r = aux_frame_read_size_limit(PacketBlobWO->mPacket->data, PacketBlobWO->mPacket->dataLength, Offset, &Offset, GS_FRAME_SIZE_LEN, &LengthLimit)))
-			GS_GOTO_CLEAN();
+		GS_ASSERT(Ctx->mClntState->mMissingBloblist && Ctx->mClntState->mWrittenBlob && Ctx->mClntState->mReceivedOneShotBlob && Ctx->mClntState->mMissingTreelist);
 
-		if (!!(r = aux_frame_full_aux_read_paired_vec_noalloc(PacketBlobWO->mPacket->data, LengthLimit, Offset, &Offset,
-			NULL, &PacketBlobWO->mOffsetSize, &PacketBlobWO->mOffsetObject)))
-		{
-			GS_GOTO_CLEAN();
-		}
+		const auto & MissingBloblist = *Ctx->mClntState->mMissingBloblist;
+		const auto & ReceivedOneShotBlob = *Ctx->mClntState->mReceivedOneShotBlob;
+		      auto & WrittenBlob = *Ctx->mClntState->mWrittenBlob;
+		
+		if (!(ReceivedOneShotBlob.size() <= MissingBloblist.size() - WrittenBlob.size()))
+			GS_ERR_CLEAN(1);
 
-		if (!!(r = gs_packet_with_offset_get_veclen(PacketBlobWO.get(), &BufferBlobLen)))
-			GS_GOTO_CLEAN();
+		for (size_t i = 0; i < ReceivedOneShotBlob.size(); i++)
+			if (!! git_oid_cmp(&ReceivedOneShotBlob[i], &MissingBloblist[WrittenBlob.size() + i]))
+				GS_ERR_CLEAN(1);
 
-		GS_ASSERT(Ctx->mClntState->mMissingBloblist && Ctx->mClntState->mMissingTreelist);
-		GS_ASSERT(BufferBlobLen <= Ctx->mClntState->mMissingBloblist->size() - Ctx->mClntState->mWrittenBlob->size());
+		for (size_t i = 0; i < ReceivedOneShotBlob.size(); i++)
+			WrittenBlob.push_back(ReceivedOneShotBlob[i]);
 
-		if (!!(r = clnt_deserialize_blobs(
-			*Ctx->mClntState->mRepositoryT,
-			PacketBlobWO->mPacket->data, LengthLimit, PacketBlobWO->mOffsetSize,
-			PacketBlobWO->mPacket->data, LengthLimit, PacketBlobWO->mOffsetObject,
-			BufferBlobLen, WrittenBlob.get())))
-		{
-			GS_GOTO_CLEAN();
-		}
-
-		for (size_t i = 0; i < WrittenBlob->size(); i++)
-			Ctx->mClntState->mWrittenBlob->push_back((*WrittenBlob)[i]);
-
-		if (Ctx->mClntState->mWrittenBlob->size() < Ctx->mClntState->mMissingBloblist->size()) {
+		if (WrittenBlob.size() < MissingBloblist.size()) {
 			/* not all blobs transferred yet - staying in this state, requesting more blobs */
 
-			/* how many blobs per response the server is able to send is determined from number of blobs written during response handling (ie. here).
-			   we limit ourselves to, in our next message, requesting twice as many as we've been sent here. */
-			uint32_t NumAddedToWrittenThisTime = WrittenBlob->size();
-			uint32_t NumNotYetInWritten = Ctx->mClntState->mMissingBloblist->size() - Ctx->mClntState->mWrittenBlob->size();
+			/* server may be sending us only a part of the requested blobs (to limit resource use).
+			   requesting all remaining blobs every time would be wasteful (consider server always sending just one per response).
+			   we limit ourselves to requesting twice as many as we've been sent since the last time.
+			   (blobs received since last time are accumulated inside ReceivedOneShotBlob) */
+			uint32_t NumAddedToWrittenThisTime = ReceivedOneShotBlob.size();
+			uint32_t NumNotYetInWritten = MissingBloblist.size() - WrittenBlob.size();
 			uint32_t NumToRequest = GS_MIN(NumAddedToWrittenThisTime * 2, NumNotYetInWritten);
 
 			std::vector<git_oid> BlobsToRequest;
 			struct GsStrided BlobsToRequestStrided = {};
 
 			for (size_t i = 0; i < NumToRequest; i++)
-				BlobsToRequest.push_back((*Ctx->mClntState->mMissingBloblist)[Ctx->mClntState->mWrittenBlob->size() + i]);
+				BlobsToRequest.push_back(MissingBloblist[WrittenBlob.size() + i]);
 
 			if (!!(r = clnt_state_code_ensure(Ctx->mClntState, GS_CLNT_STATE_CODE_NEED_WRITTEN_BLOB_AND_TREE)))
 				GS_GOTO_CLEAN();
@@ -439,7 +403,7 @@ process_another_state_label:
 			if (!!(r = gs_strided_for_oid_vec_cpp(&BlobsToRequest, &BlobsToRequestStrided)))
 				GS_GOTO_CLEAN();
 
-			if (!!(r = aux_frame_full_write_request_blobs(BlobsToRequestStrided, gs_bysize_cb_String, &BysizeBuffer)))
+			if (!!(r = aux_frame_full_write_request_blobs3(BlobsToRequestStrided, gs_bysize_cb_String, &BysizeBuffer)))
 				GS_GOTO_CLEAN();
 
 			if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
@@ -448,17 +412,20 @@ process_another_state_label:
 		else {
 			/* all blobs transferred - moving state forward */
 
+			uint32_t BufferTreeLen = 0;
+
 			if (!!(r = gs_packet_with_offset_get_veclen(Ctx->mClntState->mTreePacketWithOffset.get(), &BufferTreeLen)))
 				GS_GOTO_CLEAN();
 
 			GS_ASSERT(BufferTreeLen == Ctx->mClntState->mMissingTreelist->size());
 
 			// FIXME: using full size (PacketTree->dataLength) instead of LengthLimit of PacketTree (NOT of PacketBlob!)
+			// FIXME: use last argument of clnt_deserialize_trees to sanity check actual oids of written trees?
 			if (!!(r = clnt_deserialize_trees(
 				*Ctx->mClntState->mRepositoryT,
 				Ctx->mClntState->mTreePacketWithOffset->mPacket->data, Ctx->mClntState->mTreePacketWithOffset->mPacket->dataLength, Ctx->mClntState->mTreePacketWithOffset->mOffsetSize,
 				Ctx->mClntState->mTreePacketWithOffset->mPacket->data, Ctx->mClntState->mTreePacketWithOffset->mPacket->dataLength, Ctx->mClntState->mTreePacketWithOffset->mOffsetObject,
-				BufferTreeLen, WrittenTree.get())))
+				BufferTreeLen, NULL)))
 			{
 				GS_GOTO_CLEAN();
 			}
@@ -502,7 +469,7 @@ process_another_state_label:
 
 	case GS_CLNT_STATE_CODE_NEED_NOTHING:
 	{
-		//GS_ERR_NO_CLEAN(GS_ERRCODE_EXIT);
+		GS_ERR_NO_CLEAN(GS_ERRCODE_EXIT);
 	}
 	break;
 
@@ -618,6 +585,7 @@ int gs_ev2_test_clntmain(
 	Ctx->base.CbConnect = gs_ev_clnt_state_crank3_connected;
 	Ctx->base.CbDisconnect = gs_ev_clnt_state_crank3_disconnected;
 	Ctx->base.CbCrank = gs_ev_clnt_state_crank3;
+	Ctx->base.CbWriteOnlyActive = NULL;
 	Ctx->base.CbWriteOnly = NULL;
 	Ctx->mCommonVars = CommonVars;
 	Ctx->mClntState = new ClntState();

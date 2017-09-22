@@ -103,6 +103,9 @@ static int gs_ev_serv_state_crank3(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase,
 	struct GsEvData *Packet);
+bool gs_ev_serv_state_writeonlyactive(
+	struct bufferevent *Bev,
+	struct GsEvCtx *CtxBase);
 static int gs_ev_serv_state_writeonly(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase);
@@ -340,11 +343,12 @@ int gs_ev2_serv_state_service_request_blobs3(
 
 	BloblistRequested.resize(NumUntilSizeLimit);
 
+	/* raise writeonly mode */
 	// FIXME: reusing size limit with different semantics - have a separate one
 	if (!!(r = gs_ev2_ctx_serv_write_only_init(RepositoryPathBuf, LenRepositoryPath, ServBlobSoftSizeLimit, BloblistRequested, & Ctx->mWriteOnly[Bev])))
 		GS_GOTO_CLEAN();
-
-	if (!!(r = bev_raise_cb_write(Bev)))
+	// FIXME: should be called gs_bev_write_aux or something (also bev_write_cb should call gs_bev_write_aux analogous to bev_read_cb calling gs_bev_read_aux)
+	if (!!(r = Ctx->base.CbWriteOnly(Bev, &Ctx->base)))
 		GS_GOTO_CLEAN();
 
 clean:
@@ -576,6 +580,15 @@ clean:
 	return r;
 }
 
+bool gs_ev_serv_state_writeonlyactive(
+	struct bufferevent *Bev,
+	struct GsEvCtx *CtxBase)
+{
+	struct GsEvCtxServ *Ctx = (struct GsEvCtxServ *) CtxBase;
+	bool Active = Ctx->mWriteOnly.find(Bev) != Ctx->mWriteOnly.end();
+	return Active;
+}
+
 int gs_ev_serv_state_writeonly(
 	struct bufferevent *Bev,
 	struct GsEvCtx *CtxBase)
@@ -587,7 +600,6 @@ int gs_ev_serv_state_writeonly(
 	struct evbuffer_file_segment *Seg = NULL;
 	unsigned long long FileSizeOnHeadChange = -1;
 
-	GS_ASSERT(bev_has_cb_write(Bev));
 	GS_ASSERT(Ctx->mWriteOnly.find(Bev) != Ctx->mWriteOnly.end());
 
 	struct GsEvCtxServWriteOnly *WriteOnly = & Ctx->mWriteOnly[Bev];
@@ -620,7 +632,19 @@ int gs_ev_serv_state_writeonly(
 			GS_GOTO_CLEAN();
 	}
 	else {
-		if (!!(r = bev_lower_cb_write_ex(Bev, CtxBase)))
+		std::string Buffer;
+		GS_BYPART_DATA_VAR(String, BpBuffer);
+		GS_BYPART_DATA_INIT(String, BpBuffer, &Buffer);
+
+		if (!!(r = aux_frame_full_write_response_blobs3_done(gs_bysize_cb_String, &BpBuffer)))
+			GS_GOTO_CLEAN();
+
+		if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
+			GS_GOTO_CLEAN();
+
+		/* lower writeonly mode */
+		Ctx->mWriteOnly.erase(Bev);
+		if (!!(r = gs_bev_read_aux(Bev, CtxBase)))
 			GS_GOTO_CLEAN();
 	}
 
@@ -644,6 +668,7 @@ int gs_ev2_test_servmain(struct GsAuxConfigCommonVars CommonVars)
 	Ctx->base.CbConnect = gs_ev_serv_state_crank3_connected;
 	Ctx->base.CbDisconnect = gs_ev_serv_state_crank3_disconnected;
 	Ctx->base.CbCrank = gs_ev_serv_state_crank3;
+	Ctx->base.CbWriteOnlyActive = gs_ev_serv_state_writeonlyactive;
 	Ctx->base.CbWriteOnly = gs_ev_serv_state_writeonly;
 	Ctx->mCommonVars = CommonVars;
 

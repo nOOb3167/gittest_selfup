@@ -311,6 +311,7 @@ int gs_ev2_test_selfupdatemain(
 	Ctx->base.CbConnect = gs_ev_selfupdate_crank3_connected;
 	Ctx->base.CbDisconnect = gs_ev_selfupdate_crank3_disconnected;
 	Ctx->base.CbCrank = gs_ev_selfupdate_crank3;
+	Ctx->base.CbWriteOnlyActive = NULL;
 	Ctx->base.CbWriteOnly = NULL;
 	Ctx->mCommonVars = CommonVars;
 	Ctx->mCurExeBuf = CurExeBuf; Ctx->mLenCurExe = LenCurExe;

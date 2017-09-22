@@ -137,8 +137,8 @@ int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
 	size_t LenHdr, LenData;
 
 	while (true) {
-		/* write callback designates 'dedicated write mode' on this bufferevent - in that case avoid crank */
-		if (bev_has_cb_write(Bev))
+		/* 'dedicated write mode' on this bufferevent avoids crank */
+		if (CtxBase->CbWriteOnlyActive && CtxBase->CbWriteOnlyActive(Bev, CtxBase))
 			GS_ERR_NO_CLEAN(0);
 
 		if (!!(r = gs_ev_evbuffer_get_frame_try(bufferevent_get_input(Bev), &Data, &LenHdr, &LenData)))
@@ -160,76 +160,6 @@ int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
 	}
 
 noclean:
-
-clean:
-
-	return r;
-}
-
-bool bev_has_cb_write(struct bufferevent *Bev)
-{
-	bufferevent_data_cb Cb;
-	bufferevent_getcb(Bev, NULL, &Cb, NULL, NULL);
-	return !!Cb;
-}
-
-int bev_raise_cb_write(struct bufferevent *Bev)
-{
-	int r = 0;
-
-	bufferevent_data_cb CbR;
-	bufferevent_data_cb CbW;
-	bufferevent_event_cb CbE;
-	void *CbA;
-
-	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
-	bufferevent_setcb(Bev, NULL, bev_write_cb, CbE, CbA);
-
-	GS_ASSERT(!! CbR && ! CbW);
-
-	if (!!(r = bufferevent_disable(Bev, EV_READ)))
-		GS_GOTO_CLEAN();
-	if (!!(r = bufferevent_enable(Bev, EV_WRITE)))
-		GS_GOTO_CLEAN();
-
-clean:
-
-	return r;
-}
-
-int bev_lower_cb_write(struct bufferevent *Bev)
-{
-	int r = 0;
-
-	bufferevent_data_cb CbR;
-	bufferevent_data_cb CbW;
-	bufferevent_event_cb CbE;
-	void *CbA;
-
-	bufferevent_getcb(Bev, &CbR, &CbW, &CbE, &CbA);
-	bufferevent_setcb(Bev, bev_read_cb, NULL, CbE, CbA);
-
-	GS_ASSERT(! CbR && !! CbW);
-
-	if (!!(r = bufferevent_disable(Bev, EV_WRITE)))
-		GS_GOTO_CLEAN();
-	if (!!(r = bufferevent_enable(Bev, EV_READ)))
-		GS_GOTO_CLEAN();
-
-clean:
-
-	return r;
-}
-
-int bev_lower_cb_write_ex(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
-{
-	int r = 0;
-
-	if (!!(r = bev_lower_cb_write(Bev)))
-		GS_GOTO_CLEAN();
-
-	if (!!(r = gs_bev_read_aux(Bev, CtxBase)))
-		GS_GOTO_CLEAN();
 
 clean:
 
@@ -297,10 +227,10 @@ void bev_write_cb(struct bufferevent *Bev, void *CtxBaseV)
 	int r = 0;
 	struct GsEvCtx *CtxBase = (struct GsEvCtx *) CtxBaseV;
 
-	GS_ASSERT(bev_has_cb_write(Bev));
-
-	if (!!(r = CtxBase->CbWriteOnly(Bev, CtxBase)))
-		GS_GOTO_CLEAN();
+	/* 'dedicated write mode' on this bufferevent causes writeonly */
+	if (CtxBase->CbWriteOnlyActive && CtxBase->CbWriteOnlyActive(Bev, CtxBase))
+		if (!!(r = CtxBase->CbWriteOnly(Bev, CtxBase)))
+			GS_GOTO_CLEAN();
 
 clean:
 	if (!!r) {
@@ -326,11 +256,12 @@ void evc_listener_cb(struct evconnlistener *Listener, evutil_socket_t Fd, struct
 	if (!(Bev = bufferevent_socket_new(Base, Fd, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS)))
 		GS_ERR_CLEAN(1);
 
-	bufferevent_setcb(Bev, bev_read_cb, NULL, bev_event_cb, CtxBase);
+	bufferevent_setcb(Bev, bev_read_cb, bev_write_cb, bev_event_cb, CtxBase);
 
 	if (!!(r = bufferevent_set_timeouts(Bev, &Timeout, NULL)))
 		GS_GOTO_CLEAN();
 
+	/* reading libevent source, EV_WRITE automatically enabled by bufferevent_socket_new */
 	if (!!(r = bufferevent_enable(Bev, EV_READ)))
 		GS_GOTO_CLEAN();
 
@@ -429,8 +360,9 @@ int gs_ev2_connect(
 	if (!(Bev = bufferevent_socket_new(Base, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS)))
 		GS_GOTO_CLEAN();
 
-	bufferevent_setcb(Bev, bev_read_cb, NULL, bev_event_cb, CtxBase);
+	bufferevent_setcb(Bev, bev_read_cb, bev_write_cb, bev_event_cb, CtxBase);
 
+	/* reading libevent source, EV_WRITE automatically enabled by bufferevent_socket_new */
 	if (!!(r = bufferevent_enable(Bev, EV_READ)))
 		GS_GOTO_CLEAN();
 

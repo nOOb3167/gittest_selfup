@@ -29,8 +29,7 @@ bool aux_frametype_equals(const GsFrameType &a, const GsFrameType &b) {
 	GS_ASSERT(sizeof a.mTypeName == GS_FRAME_HEADER_STR_LEN);
 	bool eqstr = memcmp(a.mTypeName, b.mTypeName, GS_FRAME_HEADER_STR_LEN) == 0;
 	bool eqnum = a.mTypeNum == b.mTypeNum;
-	/* XOR basically */
-	if ((eqstr || eqnum) && (!eqstr || !eqnum))
+	if ((eqstr && !eqnum) || (!eqstr && eqnum))
 		GS_ASSERT(0);
 	return eqstr && eqnum;
 }
@@ -656,6 +655,14 @@ int aux_frame_full_write_request_blobs3(
 	static GsFrameType FrameType = GS_FRAME_TYPE_DECL(REQUEST_BLOBS3);
 
 	return aux_frame_full_aux_write_oid_vec(&FrameType, OidVecStrided, cb, ctx);
+}
+
+int aux_frame_full_write_response_blobs3_done(
+	gs_bysize_cb_t cb, void *ctx)
+{
+	static GsFrameType FrameType = GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3_DONE);
+
+	return aux_frame_full_aux_write_empty(&FrameType, cb, ctx);
 }
 
 int aux_frame_full_write_response_blobs(
