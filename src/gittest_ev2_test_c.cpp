@@ -367,7 +367,7 @@ process_another_state_label:
 		GS_ASSERT(Ctx->mClntState->mMissingBloblist && Ctx->mClntState->mWrittenBlob && Ctx->mClntState->mReceivedOneShotBlob && Ctx->mClntState->mMissingTreelist);
 
 		const auto & MissingBloblist = *Ctx->mClntState->mMissingBloblist;
-		const auto & ReceivedOneShotBlob = *Ctx->mClntState->mReceivedOneShotBlob;
+		      auto & ReceivedOneShotBlob = *Ctx->mClntState->mReceivedOneShotBlob;
 		      auto & WrittenBlob = *Ctx->mClntState->mWrittenBlob;
 		
 		if (!(ReceivedOneShotBlob.size() <= MissingBloblist.size() - WrittenBlob.size()))
@@ -380,6 +380,10 @@ process_another_state_label:
 		for (size_t i = 0; i < ReceivedOneShotBlob.size(); i++)
 			WrittenBlob.push_back(ReceivedOneShotBlob[i]);
 
+		/* count ReceivedOneShotBlob as processed */
+		const uint32_t NumAddedToWrittenThisTime = ReceivedOneShotBlob.size();
+		ReceivedOneShotBlob.clear();
+
 		if (WrittenBlob.size() < MissingBloblist.size()) {
 			/* not all blobs transferred yet - staying in this state, requesting more blobs */
 
@@ -387,9 +391,8 @@ process_another_state_label:
 			   requesting all remaining blobs every time would be wasteful (consider server always sending just one per response).
 			   we limit ourselves to requesting twice as many as we've been sent since the last time.
 			   (blobs received since last time are accumulated inside ReceivedOneShotBlob) */
-			uint32_t NumAddedToWrittenThisTime = ReceivedOneShotBlob.size();
-			uint32_t NumNotYetInWritten = MissingBloblist.size() - WrittenBlob.size();
-			uint32_t NumToRequest = GS_MIN(NumAddedToWrittenThisTime * 2, NumNotYetInWritten);
+			const uint32_t NumNotYetInWritten = MissingBloblist.size() - WrittenBlob.size();
+			const uint32_t NumToRequest = GS_MIN(NumAddedToWrittenThisTime * 2, NumNotYetInWritten);
 
 			std::vector<git_oid> BlobsToRequest;
 			struct GsStrided BlobsToRequestStrided = {};
