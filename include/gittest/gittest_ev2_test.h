@@ -120,6 +120,8 @@ int gs_ev2_test_selfupdatemain(
 
 /* common */
 
+bool gs_ev_ctx_writeonly_active(struct bufferevent *Bev, struct GsEvCtx *Ctx);
+
 int gs_packet_with_offset_get_veclen(
 	struct GsPacketWithOffset *PacketWithOffset,
 	uint32_t *oVecLen);
@@ -138,6 +140,7 @@ int gs_ev_evbuffer_write_frame_outer_header(
 	size_t LenData);
 
 int gs_bev_read_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
+int gs_bev_write_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase);
 
 void bev_event_cb(struct bufferevent *Bev, short What, void *CtxBaseV);
 void bev_read_cb(struct bufferevent *Bev, void *CtxBaseV);

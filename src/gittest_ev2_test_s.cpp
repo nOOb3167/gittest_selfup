@@ -343,13 +343,13 @@ int gs_ev2_serv_state_service_request_blobs3(
 
 	BloblistRequested.resize(NumUntilSizeLimit);
 
-	/* raise writeonly mode */
 	// FIXME: reusing size limit with different semantics - have a separate one
+	GS_ASSERT(! gs_ev_ctx_writeonly_active(Bev, &Ctx->base));
 	if (!!(r = gs_ev2_ctx_serv_write_only_init(RepositoryPathBuf, LenRepositoryPath, ServBlobSoftSizeLimit, BloblistRequested, & Ctx->mWriteOnly[Bev])))
 		GS_GOTO_CLEAN();
-	// FIXME: should be called gs_bev_write_aux or something (also bev_write_cb should call gs_bev_write_aux analogous to bev_read_cb calling gs_bev_read_aux)
-	if (!!(r = Ctx->base.CbWriteOnly(Bev, &Ctx->base)))
+	if (!!(r = gs_bev_write_aux(Bev, &Ctx->base)))
 		GS_GOTO_CLEAN();
+	GS_ASSERT(gs_ev_ctx_writeonly_active(Bev, &Ctx->base));
 
 clean:
 
@@ -642,10 +642,11 @@ int gs_ev_serv_state_writeonly(
 		if (!!(r = gs_ev_evbuffer_write_frame(bufferevent_get_output(Bev), Buffer.data(), Buffer.size())))
 			GS_GOTO_CLEAN();
 
-		/* lower writeonly mode */
+		GS_ASSERT(gs_ev_ctx_writeonly_active(Bev, &Ctx->base));
 		Ctx->mWriteOnly.erase(Bev);
 		if (!!(r = gs_bev_read_aux(Bev, CtxBase)))
 			GS_GOTO_CLEAN();
+		GS_ASSERT(! gs_ev_ctx_writeonly_active(Bev, &Ctx->base));
 	}
 
 clean:

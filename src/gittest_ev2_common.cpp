@@ -20,6 +20,11 @@
 #include <gittest/gittest_ev2_test.h>
 #include <gittest/frame.h>
 
+bool gs_ev_ctx_writeonly_active(struct bufferevent *Bev, struct GsEvCtx *Ctx)
+{
+	return (Ctx->CbWriteOnlyActive && Ctx->CbWriteOnlyActive(Bev, Ctx));
+}
+
 int gs_packet_with_offset_get_veclen(
 	struct GsPacketWithOffset *PacketWithOffset,
 	uint32_t *oVecLen)
@@ -166,6 +171,19 @@ clean:
 	return r;
 }
 
+int gs_bev_write_aux(struct bufferevent *Bev, struct GsEvCtx *CtxBase)
+{
+	int r = 0;
+
+	if (gs_ev_ctx_writeonly_active(Bev, CtxBase))
+		if (!!(r = CtxBase->CbWriteOnly(Bev, CtxBase)))
+			GS_GOTO_CLEAN();
+
+clean:
+
+	return r;
+}
+
 void bev_event_cb(struct bufferevent *Bev, short What, void *CtxBaseV)
 {
 	int r = 0;
@@ -227,10 +245,8 @@ void bev_write_cb(struct bufferevent *Bev, void *CtxBaseV)
 	int r = 0;
 	struct GsEvCtx *CtxBase = (struct GsEvCtx *) CtxBaseV;
 
-	/* 'dedicated write mode' on this bufferevent causes writeonly */
-	if (CtxBase->CbWriteOnlyActive && CtxBase->CbWriteOnlyActive(Bev, CtxBase))
-		if (!!(r = CtxBase->CbWriteOnly(Bev, CtxBase)))
-			GS_GOTO_CLEAN();
+	if (!!(r = gs_bev_write_aux(Bev, CtxBase)))
+		GS_GOTO_CLEAN();
 
 clean:
 	if (!!r) {
