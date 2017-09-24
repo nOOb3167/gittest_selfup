@@ -13,11 +13,6 @@
 #include <git2.h>
 #include <git2/sys/memes.h>
 
-#include <io.h>  // FIXME: win32 specific
-#include <fcntl.h> //
-#include <sys/types.h> //
-#include <sys/stat.h> //
-
 #define EVENT2_VISIBILITY_STATIC_MSVC
 #include <event2/event.h>
 #include <event2/listener.h>
@@ -28,6 +23,7 @@
 #include <gittest/bypart_git.h>
 #include <gittest/log.h>
 #include <gittest/config.h>
+#include <gittest/filesys.h>
 #include <gittest/gittest.h>
 #include <gittest/frame.h>
 
@@ -42,7 +38,7 @@ struct GsEvCtxServWriteOnlyHead
 	unsigned long long mOffset;
 
 	void incref() { mRefCount++; }
-	void decref() { if (--mRefCount == 0 && mFd != -1) { _close(mFd); delete this; } }
+	void decref() { if (--mRefCount == 0 && mFd != -1) { gs_posixstyle_close(mFd); delete this; } }
 };
 
 struct GsEvCtxServWriteOnly
@@ -163,7 +159,7 @@ int gs_ev2_ctx_serv_write_only_advance_produce_segment(
 		char PathBuf[512] = {};
 		size_t LenPath = 0;
 		int Fd = -1;
-		struct _stat Stat = {};
+		struct gs_stat Stat = {};
 
 		if (++WriteOnly->mWritingHead >= WriteOnly->mWriting.size())
 			GS_ERR_NO_CLEAN(0);
@@ -176,23 +172,23 @@ int gs_ev2_ctx_serv_write_only_advance_produce_segment(
 			GS_GOTO_CLEAN();
 		}
 
-		if (-1 == (Fd = _open(PathBuf, _O_RDONLY | _O_BINARY)))
+		if (-1 == (Fd = gs_posixstyle_open_read(PathBuf)))
 			GS_ERR_CLEAN(1);
 
-		if (-1 == _fstat(Fd, &Stat))
+		if (-1 == gs_posixstyle_fstat(Fd, &Stat))
 			GS_ERR_CLEAN(1);
 
-		if (! ((Stat.st_mode & _S_IFMT) == _S_IFREG))
+		if (! Stat.mStMode_IfReg)
 			GS_ERR_CLEAN(1);
 
 		WriteOnlyHaveAcquired = true;
 
-		FileSizeOnHeadChange = Stat.st_size;
+		FileSizeOnHeadChange = Stat.mStSize;
 
 		WriteOnly->mHead = new GsEvCtxServWriteOnlyHead();
 		WriteOnly->mHead->mRefCount = 1;
 		WriteOnly->mHead->mFd = Fd;
-		WriteOnly->mHead->mSize = Stat.st_size;
+		WriteOnly->mHead->mSize = Stat.mStSize;
 		WriteOnly->mHead->mOffset = 0;
 
 		RemainingLimited = GS_MIN(WriteOnly->mHead->mSize, WriteOnly->mSegmentSizeLimit);
