@@ -114,7 +114,7 @@ int aux_checkout(
 	git_repository *Repository,
 	git_oid *TreeOid,
 	const char *CheckoutPathBuf, size_t LenCheckoutPath,
-	const char *ExpectedContainsBuf, size_t LenExpectedContains);
+	const char *ExpectedContainsOptBuf, size_t LenExpectedContainsOpt);
 int aux_repository_checkout(
 	const char *RepoMasterUpdatePathBuf, size_t LenRepoMasterUpdatePath,
 	const char *RefNameMainBuf, size_t LenRefNameMain,

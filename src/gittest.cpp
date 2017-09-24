@@ -24,6 +24,7 @@
 #include <gittest/misc.h>
 #include <gittest/bypart.h>
 #include <gittest/bypart_git.h>
+#include <gittest/filesys.h>
 #include <gittest/gittest.h>
 
 /*
@@ -1106,7 +1107,7 @@ int aux_checkout(
 	git_repository *Repository,
 	git_oid *TreeOid,
 	const char *CheckoutPathBuf, size_t LenCheckoutPath,
-	const char *ExpectedContainsBuf, size_t LenExpectedContains)
+	const char *ExpectedContainsOptBuf, size_t LenExpectedContainsOpt)
 {
 	int r = 0;
 
@@ -1117,11 +1118,13 @@ int aux_checkout(
 	if (!!(r = gs_buf_ensure_haszero(CheckoutPathBuf, LenCheckoutPath + 1)))
 		goto clean;
 
-	if (!!(r = gs_buf_ensure_haszero(ExpectedContainsBuf, LenExpectedContains + 1)))
-		goto clean;
+	if (ExpectedContainsOptBuf) {
+		if (!!(r = gs_buf_ensure_haszero(ExpectedContainsOptBuf, LenExpectedContainsOpt + 1)))
+			goto clean;
 
-	if (strstr(CheckoutPathBuf, ExpectedContainsBuf) == NULL)
-		{ r = 1; goto clean; }
+		if (strstr(CheckoutPathBuf, ExpectedContainsOptBuf) == NULL)
+			{ r = 1; goto clean; }
+	}
 
 	opts.checkout_strategy = 0;
 	opts.checkout_strategy |= GIT_CHECKOUT_FORCE;
@@ -1165,12 +1168,15 @@ int aux_repository_checkout(
 	if (!!(r = aux_oid_latest_commit_tree(Repository, RefNameMainBuf, &CommitHeadOid, &TreeHeadOid)))
 		GS_GOTO_CLEAN();
 
+	if (!!(r = gs_directory_create_unless_exist(RepoMasterUpdateCheckoutPathBuf, LenRepoMasterUpdateCheckoutPath)))
+		GS_GOTO_CLEAN();
+
 	// FIXME: hardcoded path check value (/data/)
 	if (!!(r = aux_checkout(
 		Repository,
 		&TreeHeadOid,
 		RepoMasterUpdateCheckoutPathBuf, LenRepoMasterUpdateCheckoutPath,
-		"/data/", strlen("/data/"))))
+		NULL, 0)))
 	{
 		GS_GOTO_CLEAN();
 	}
