@@ -139,6 +139,7 @@ GITTEST_COMMON_GENERATE(${CMAKE_SOURCE_DIR}/data imgpbblip_96_32_ .data)
 SET(GITTEST_EV2_SELFUPDATE_HEADERS
   include/gittest/gittest_ev2_test.h
   include/gittest/gui.h
+  include/gittest/net4.h
   ${GITTEST_LIB_HEADERS}
 )
 
@@ -177,6 +178,7 @@ TARGET_COMPILE_DEFINITIONS(gittest_ev2_selfupdate_clone PRIVATE GS_CONFIG_DEFS_G
 
 IF (WIN32)
   SET(GITTEST_PLAT_HEADERS_NIX
+    include/gittest/net4.h
   )
   SET(GITTEST_PLAT_SOURCES_NIX
     src/gui_nix.cpp
