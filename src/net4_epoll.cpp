@@ -106,7 +106,7 @@ void sender_func(struct XsServCtl *ServCtl)
 	else
 		freeaddrinfo(Res);
 
-	while (-1 == connect(ConnectFd, (struct sockaddr *) &Addr, sizeof Addr)) {
+	while (-1 == connect(ConnectFd, Rp->ai_addr, Rp->ai_addrlen)) {
 		if (errno == EINTR)
 			continue;
 		if (errno == EINPROGRESS) {
@@ -305,6 +305,7 @@ clean:
 
 int xs_eventfd_read(int EvtFd)
 {
+	int r = 0;
 	char    Buf[8] = {};
 	ssize_t nread  = 0;
 
