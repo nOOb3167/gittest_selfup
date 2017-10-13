@@ -19,6 +19,7 @@ enum XsWriteOnlyType
 	XS_WRITE_ONLY_TYPE_NONE = 0,
 	XS_WRITE_ONLY_TYPE_BUFFER = 1,
 	XS_WRITE_ONLY_TYPE_SENDFILE = 2,
+	XS_WRITE_ONLY_MAX = 0x7FFFFFFF,
 };
 
 struct XsWriteOnlyDataBuffer
@@ -69,9 +70,20 @@ struct XsConCtx
 
 typedef int(*xs_cb_ctx_create_t)(struct XsConCtx **oCtxBase, enum XsSockType Type);
 
+int xs_net4_write_frame_outer_header(
+	size_t LenData,
+	char *ioNineCharBuf, size_t NineCharBufSize, size_t *oLenNineCharBuf);
+
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl);
 int xs_serv_ctl_quit_request(struct XsServCtl *ServCtl);
 int xs_serv_ctl_quit_wait(struct XsServCtl *ServCtl);
+
+int xs_write_only_data_buffer_init_copying(struct XsWriteOnly *WriteOnly, const char *DataBuf, size_t LenData);
+int xs_write_only_data_buffer_init_copying2(
+	struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer,
+	const char *Data1Buf, size_t LenData1,
+	const char *Data2Buf, size_t LenData2);
+int xs_write_only_data_buffer_reset(struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer);
 
 int xs_write_only_data_buffer_advance(int Fd, struct XsWriteOnlyDataBuffer *Buffer);
 int xs_write_only_data_send_file_advance(int Fd, struct XsWriteOnlyDataSendFile *SendFile);

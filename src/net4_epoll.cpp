@@ -188,7 +188,7 @@ int cbctxdestroy(struct XsConCtx *CtxBase)
 {
 	struct XsConCtx *Ctx = (struct XsConCtx *) CtxBase;
 
-	delete Ctx;
+	GS_DELETE(&Ctx, struct XsConCtx);
 
 	return 0;
 }
@@ -249,26 +249,73 @@ int cbwriteonly1(struct XsConCtx *CtxBase)
 	return 0;
 }
 
+int xs_write_only_data_buffer_init_copying(struct XsWriteOnly *WriteOnly, const char *DataBuf, size_t LenData)
+{
+	int r = 0;
+
+	if (WriteOnly->mType != XS_WRITE_ONLY_TYPE_NONE)
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = xs_write_only_data_buffer_init_copying_2(& WriteOnly->mData.mBuffer, DataBuf, LenData)))
+		GS_GOTO_CLEAN();
+
+	WriteOnly->mType = XS_WRITE_ONLY_TYPE_BUFFER;
+
+clean:
+
+	return r;
+}
+
+int xs_write_only_data_buffer_init_copying2(
+	struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer,
+	const char *Data1Buf, size_t LenData1,
+	const char *Data2Buf, size_t LenData2)
+{
+	GS_ASSERT(! WriteOnlyDataBuffer->mBuf);
+	GS_ASSERT(LenData1 != 0 || LenData2 != 0);
+	if (! (WriteOnlyDataBuffer->mBuf = (char *)malloc(LenData1 + LenData2)))
+		return 1;
+	WriteOnlyDataBuffer->mLen = LenData1 + LenData2;
+	WriteOnlyDataBuffer->mOff = 0;
+	if (LenData1)
+		memcpy(WriteOnlyDataBuffer->mBuf + 0, Data1Buf, LenData1);
+	if (LenData2)
+		memcpy(WriteOnlyDataBuffer->mBuf + LenData1, Data2Buf, LenData2);
+	return 0;
+}
+
+int xs_write_only_data_buffer_reset(struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer)
+{
+	if (WriteOnlyDataBuffer->mBuf)
+		free(WriteOnlyDataBuffer->mBuf);
+	WriteOnlyDataBuffer->mBuf = 0;
+	WriteOnlyDataBuffer->mLen = 0;
+	WriteOnlyDataBuffer->mOff = 0;
+	return 0;
+}
+
 int xs_write_only_data_buffer_advance(int Fd, struct XsWriteOnlyDataBuffer *Buffer)
 {
 	/* caller inspects Buffer->mOff == Buffer->mLen for completion testing */
+	/* on success, either has completed or has reached EAGAIN */
 	int r = 0;
-	ssize_t nsent = 0;
 
-	assert(Buffer->mOff <= Buffer->mLen);
+	GS_ASSERT(Buffer->mOff <= Buffer->mLen);
 
 	if (Buffer->mOff == Buffer->mLen)
 		GS_ERR_NO_CLEAN(0);
 
-	while (-1 == (nsent = sendto(Fd, Buffer->mBuf + Buffer->mOff, Buffer->mLen - Buffer->mOff, MSG_NOSIGNAL, NULL, 0))) {
-		if (errno == EINTR)
-			continue;
-		if (errno == EAGAIN || errno == EWOULDBLOCK)
-			GS_ERR_NO_CLEAN(0);
-		GS_ERR_CLEAN(1);
+	while (Buffer->mOff < Buffer->mLen) {
+		ssize_t nsent = 0;
+		while (-1 == (nsent = sendto(Fd, Buffer->mBuf + Buffer->mOff, Buffer->mLen - Buffer->mOff, MSG_NOSIGNAL, NULL, 0))) {
+			if (errno == EINTR)
+				continue;
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				GS_ERR_NO_CLEAN(0);
+			GS_ERR_CLEAN(1);
+		}
+		Buffer->mOff += nsent;
 	}
-
-	Buffer->mOff += nsent;
 
 noclean:
 
@@ -283,7 +330,7 @@ int xs_write_only_data_send_file_advance(int Fd, struct XsWriteOnlyDataSendFile 
 	int r = 0;
 	int nsent = 0;
 
-	assert(SendFile->mOff <= SendFile->mLen);
+	GS_ASSERT(SendFile->mOff <= SendFile->mLen);
 
 	// FIXME: be smarter about requested count remember no such thing as nonblocking file read (linux)
 	while (-1 == (nsent = sendfile(Fd, SendFile->mFd, NULL, SendFile->mLen - SendFile->mOff))) {
@@ -343,6 +390,17 @@ int xs_eventfd_write(int EvtFd, int Value)
 clean:
 
   return 0;
+}
+
+int xs_net4_write_frame_outer_header(
+	size_t LenData,
+	char *ioNineCharBuf, size_t NineCharBufSize, size_t *oLenNineCharBuf)
+{
+	if (NineCharBufSize < 9) return 1;
+	memcpy(ioNineCharBuf + 0, "FRAME", 5);
+	aux_uint32_to_LE(LenData, ioNineCharBuf + 5, 4);
+	*oLenNineCharBuf = 9;
+	return 0;
 }
 
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl)
@@ -812,9 +870,6 @@ clean:
 int xs_main(int argc, char **argv)
 {
   int ListenFd = -1;
-
-  struct sockaddr_in Addr = {};
-
   struct XsServCtl *ServCtl = NULL;
   sp<std::thread> ThreadSend;
 
