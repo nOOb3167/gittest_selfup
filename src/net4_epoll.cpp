@@ -256,7 +256,7 @@ int xs_write_only_data_buffer_init_copying(struct XsWriteOnly *WriteOnly, const 
 	if (WriteOnly->mType != XS_WRITE_ONLY_TYPE_NONE)
 		GS_ERR_CLEAN(1);
 
-	if (!!(r = xs_write_only_data_buffer_init_copying_2(& WriteOnly->mData.mBuffer, DataBuf, LenData)))
+	if (!!(r = xs_write_only_data_buffer_init_copying2(& WriteOnly->mData.mBuffer, DataBuf, LenData, NULL, 0)))
 		GS_GOTO_CLEAN();
 
 	WriteOnly->mType = XS_WRITE_ONLY_TYPE_BUFFER;
