@@ -259,6 +259,15 @@ clean:
 	return r;
 }
 
+bool aux_frame_is_frametype(uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,
+	const GsFrameType &FrameType)
+{
+	GsFrameType FoundFrameType = {};
+	if (!! aux_frame_read_frametype(DataStart, DataLength, Offset, &Offset, &FoundFrameType))
+		return 0;
+	return aux_frametype_equals(FoundFrameType, FrameType);
+}
+
 int aux_frame_read_oid(
 	uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,
 	uint8_t *oOid, uint32_t OidSize)

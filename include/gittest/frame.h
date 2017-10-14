@@ -96,6 +96,8 @@ int aux_frame_write_frametype(
 int aux_frame_ensure_frametype(
 	uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,
 	const GsFrameType &FrameType);
+bool aux_frame_is_frametype(uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,
+	const GsFrameType &FrameType);
 
 int aux_frame_read_oid(
 	uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,

@@ -69,7 +69,7 @@ int gs_ev_clnt_state_received_oneshot_blob_cond(
 	size_t BlobOffset;
 	size_t BlobSize;
 
-	if (!!(r = aux_frame_ensure_frametype(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
+	if (!!(r = aux_frame_is_frametype(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
 		GS_ERR_NO_CLEAN(0);
 
 	IsHandledBy = 1;
