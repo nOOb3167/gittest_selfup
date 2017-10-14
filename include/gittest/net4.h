@@ -4,6 +4,13 @@
 #include <gittest/misc.h>
 #include <gittest/gittest_ev2_test.h>  // ex GsPacket
 
+#define XS_WRITE_ONLY_TYPE_NONE     0
+#define XS_WRITE_ONLY_TYPE_BUFFER   1
+#define XS_WRITE_ONLY_TYPE_SENDFILE 2
+#define XS_WRITE_ONLY_TYPE_MAX      0x7FFFFFFF
+
+typedef unsigned long XsWriteOnlyType;
+
 /* intended to be forward-declared in header (API use pointer only) */
 struct XsServCtl;
 
@@ -12,14 +19,6 @@ enum XsSockType
 	XS_SOCK_TYPE_LISTEN = 1,
 	XS_SOCK_TYPE_NORMAL = 2,
 	XS_SOCK_TYPE_EVENT = 3,
-};
-
-enum XsWriteOnlyType
-{
-	XS_WRITE_ONLY_TYPE_NONE = 0,
-	XS_WRITE_ONLY_TYPE_BUFFER = 1,
-	XS_WRITE_ONLY_TYPE_SENDFILE = 2,
-	XS_WRITE_ONLY_MAX = 0x7FFFFFFF,
 };
 
 struct XsWriteOnlyDataBuffer
@@ -39,7 +38,7 @@ struct XsWriteOnlyDataSendFile
 
 struct XsWriteOnly
 {
-	enum XsWriteOnlyType mType;
+	XsWriteOnlyType mType;
 	union
 	{
 		struct XsWriteOnlyDataBuffer mBuffer;
