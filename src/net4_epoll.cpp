@@ -52,10 +52,10 @@ struct XsEPollCtx
 void sender_func(struct XsServCtl *ServCtl);
 
 // FIXME: temp funcs
-int cbctxcreate(struct XsConCtx **oCtxBase);
-int cbctxdestroy(struct XsConCtx *CtxBase);
-int cbcrank1(struct XsConCtx *CtxBase, struct GsPacket *Packet);
-int cbwriteonly1(struct XsConCtx *CtxBase);
+static int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type);
+static int cbctxdestroy(struct XsConCtx *CtxBase);
+static int cbcrank1(struct XsConCtx *CtxBase, struct GsPacket *Packet);
+static int cbwriteonly1(struct XsConCtx *CtxBase);
 
 static int xs_eventfd_read(int EvtFd);
 static int xs_eventfd_write(int EvtFd, int Value);

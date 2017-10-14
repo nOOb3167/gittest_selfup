@@ -38,7 +38,7 @@ struct XsConCtxServ
 	struct XsConCtxServWriteOnly mWriteOnlyServ;
 };
 
-static int cbctxcreate(struct XsConCtx **oCtxBase);
+static int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type);
 static int cbctxdestroy(struct XsConCtx *CtxBase);
 static int cbcrank1(struct XsConCtx *CtxBase, struct GsPacket *Packet);
 static int cbwriteonly1(struct XsConCtx *CtxBase);
