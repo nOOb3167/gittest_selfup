@@ -208,7 +208,7 @@ int tree_toposort(git_repository *Repository, git_tree *Tree, topolist_t *oNodeL
 	topolist_t NodeList; /* filled by owned git_tree - must free */
 	if (!!(r = tree_toposort_visit(Repository, &MarkSet, &NodeList, Tree)))
 		goto clean;
-	
+
 	if (oNodeList)
 		oNodeList->swap(NodeList);
 
@@ -219,6 +219,131 @@ clean:
 	}
 
 	return r;
+}
+
+/* takes ownership of 'Tree' */
+int tree_toposort_visit2(const char *RepositoryPathBuf, size_t LenRepositoryPath, toposet_t *MarkSet, struct GsTreeInflatedNode **NodeList, struct GsTreeInflated *Tree)
+{
+	int r = 0;
+	struct GsTreeInflatedNode *NewNode = NULL;
+	/* = if n is not marked (i.e. has not been visited yet) then = */
+	if (MarkSet->find(&Tree->mOid) == MarkSet->end()) {
+		/* = mark n = */
+		MarkSet->insert(&Tree->mOid);
+		/* = for each node m with an edge from n to m do = */
+		size_t Offset = 0;
+		unsigned long long Mode = 0;
+		const char *FileName = NULL;
+		size_t FileNameLen = 0;
+		git_oid TreeOid = {};
+		while (!(r = git_memes_tree(Tree->mDataBuf, Tree->mLenData, &Offset, &Mode, &FileName, &FileNameLen, &TreeOid)) && Offset != -1) {
+			struct GsTreeInflated *TreeSubTree = NULL;
+			if (Mode != GIT_FILEMODE_TREE)
+				continue;
+			if (!!(r = gs_tree_inflated_create(&TreeSubTree)))
+				goto cleansub;
+			if (!!(r = gs_git_read_tree(RepositoryPathBuf, LenRepositoryPath, &TreeOid, GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT, TreeSubTree)))
+				goto cleansub;
+			/* = visit(m) = */
+			if (!!(r = tree_toposort_visit2(RepositoryPathBuf, LenRepositoryPath, MarkSet, NodeList, GS_ARGOWN(&TreeSubTree))))
+				goto cleansub;
+		cleansub:
+			GS_DELETE_F(&TreeSubTree, gs_tree_inflated_destroy);
+			if (!!r)
+				goto clean;
+		}
+		/* = add n to head of L = */
+		if (!(NewNode = (struct GsTreeInflatedNode *) calloc(sizeof *NewNode, 1)))
+			goto clean;
+		NewNode->mData = GS_ARGOWN(&Tree);
+		NewNode->mNext = *NodeList;
+		*NodeList = GS_ARGOWN(&NewNode);
+	}
+
+clean:
+	GS_DELETE_F(&NewNode, gs_tree_inflated_node_destroy);
+	GS_DELETE_F(&Tree, gs_tree_inflated_destroy);
+
+	return r;
+}
+
+/* takes ownership of 'Tree' */
+int tree_toposort_2(const char *RepositoryPathBuf, size_t LenRepositoryPath, struct GsTreeInflated *Tree, struct GsTreeInflatedNode **oNodeList)
+{
+	/* https://en.wikipedia.org/wiki/Topological_sorting#Depth-first_search */
+	int r = 0;
+	toposet_t MarkSet;
+	struct GsTreeInflatedNode *NodeList = NULL;
+	if (!!(r = tree_toposort_visit2(RepositoryPathBuf, LenRepositoryPath, &MarkSet, &NodeList, GS_ARGOWN(&Tree))))
+		goto clean;
+
+	if (oNodeList)
+		*oNodeList = GS_ARGOWN(&NodeList);
+
+clean:
+	GS_DELETE_F(&Tree, gs_tree_inflated_destroy);
+	GS_DELETE_F(&NodeList, gs_tree_inflated_node_list_destroy);
+
+	return r;
+}
+
+int gs_tree_inflated_create(struct GsTreeInflated **oTree)
+{
+	if (!(*oTree = (struct GsTreeInflated *) malloc(sizeof **oTree)))
+		return 1;
+	(*oTree) = {};
+	return 0;
+}
+
+int gs_tree_inflated_destroy(struct GsTreeInflated *ioTree)
+{
+	if (ioTree) {
+		if (ioTree->mDataBuf) {
+			free((void *) ioTree->mDataBuf);
+			ioTree->mDataBuf = NULL;
+		}
+		free(ioTree);
+	}
+	return 0;
+}
+
+int gs_tree_inflated_node_destroy(struct GsTreeInflatedNode *ioNode)
+{
+	if (ioNode) {
+		GS_DELETE_F(&ioNode->mData, gs_tree_inflated_destroy);
+		free((void *) ioNode);
+	}
+	return 0;
+}
+
+int gs_tree_inflated_node_list_destroy(struct GsTreeInflatedNode *ioHead)
+{
+	for (struct GsTreeInflatedNode *it = ioHead; it; /*dummy*/) {
+		struct GsTreeInflatedNode *tmp = it;
+		it = tmp->mNext;
+		GS_DELETE_F(&tmp, gs_tree_inflated_node_destroy);
+	}
+	return 0;
+}
+
+int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List)
+{
+	/* can not fail - leaks or whatever on failure */
+	struct GsTreeInflatedNode *Head = *List;
+	if (Head != NULL) {
+		struct GsTreeInflatedNode *Rev = Head;
+		struct GsTreeInflatedNode *Nxt = Head->mNext;
+		Rev->mNext = NULL;  /* first node (Head) becomes last of Rev and is cut off here */
+		while (Nxt) {
+			struct GsTreeInflatedNode *Tmp = Nxt;
+			Nxt = Nxt->mNext;
+
+			Tmp->mNext = Rev;
+			Rev = Tmp;
+		}
+		*List = Rev;
+	}
+	return 0;
 }
 
 int aux_gittest_init() {
@@ -1259,6 +1384,205 @@ int aux_objects_until_sizelimit(
 
 clean:
 	git_odb_free(Odb);
+
+	return r;
+}
+
+int gs_latest_commit_tree_oid(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	const char *RefNameBuf, size_t LenRefName,
+	git_oid *oCommitHeadOid, git_oid *oTreeHeadOid)
+{
+	int r = 0;
+
+	char RefNameNormalBuf[1024] = {};
+	char RefFilePathBuf[1024] = {};
+	size_t LenRefFilePath = 0;
+	char RefFileContentBuf[1024] = {};
+	size_t LenRefFileContent = 0;
+
+	git_oid CommitHeadOid = {};
+
+	char CommitHeadPathBuf[1024] = {};
+	size_t LenCommitHeadPath = 0;
+	char CommitContentBuf[4096] = {};
+	size_t LenCommitContent = 0;
+	git_buf CommitInflated = {};
+	git_otype CommitType = GIT_OBJ_BAD;
+	size_t CommitOffset = 0;
+	size_t CommitSize = 0;
+
+	git_oid TreeHeadOid = {};
+
+
+	/* https://github.com/git/git/blob/f06d47e7e0d9db709ee204ed13a8a7486149f494/refs.c#L36-100 */
+	/* also libgit2 refs.c git_reference__normalize_name */
+
+	if (!!(r = gs_buf_ensure_haszero(RefNameBuf, LenRefName + 1)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = git_reference_normalize_name(RefNameNormalBuf, sizeof RefNameNormalBuf, RefNameBuf, GIT_REF_FORMAT_NORMAL)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_path_append_abs_rel(
+		RepositoryPathBuf, LenRepositoryPath,
+		RefNameBuf, LenRefName,
+		RefFilePathBuf, sizeof RefFilePathBuf, &LenRefFilePath)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = gs_file_read_tobuffer_block(
+		RefFilePathBuf, LenRefFilePath,
+		RefFileContentBuf, sizeof RefFileContentBuf, &LenRefFileContent)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (LenRefFileContent < GIT_OID_HEXSZ)
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = git_oid_fromstr(&CommitHeadOid, RefFileContentBuf)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = git_memes_objpath(
+		RepositoryPathBuf, LenRepositoryPath,
+		&CommitHeadOid,
+		CommitHeadPathBuf, sizeof CommitHeadPathBuf, &LenCommitHeadPath)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = gs_file_read_tobuffer_block(
+		CommitHeadPathBuf, LenCommitHeadPath,
+		CommitContentBuf, sizeof CommitContentBuf, &LenCommitContent)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = git_memes_inflate(CommitContentBuf, LenCommitContent, &CommitInflated, &CommitType, &CommitOffset, &CommitSize)))
+		GS_GOTO_CLEAN();
+
+	if (CommitType != GIT_OBJ_COMMIT)
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = git_memes_commit(CommitInflated.ptr + CommitOffset, CommitSize, &TreeHeadOid)))
+		GS_GOTO_CLEAN();
+
+	if (oCommitHeadOid)
+		git_oid_cpy(oCommitHeadOid, &CommitHeadOid);
+	if (oTreeHeadOid)
+		git_oid_cpy(oTreeHeadOid, &TreeHeadOid);
+
+clean:
+
+	return r;
+}
+
+int gs_git_read_tree(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	git_oid *TreeOid,
+	size_t TreeRawSizeLimit,
+	struct GsTreeInflated **oTree)
+{
+	int r = 0;
+
+	struct GsTreeInflated *Tree = NULL;
+
+	char TreePathBuf[1024] = {};
+	size_t LenTreePath = 0;
+
+	char *TreeContentAlloc = NULL;
+	size_t TreeContentAllocSize = TreeRawSizeLimit;
+	size_t LenTreeContentAlloc = 0;
+
+	git_buf TreeInflated = {};
+	git_otype TreeType = GIT_OBJ_BAD;
+	size_t TreeOffset = 0;
+	size_t TreeSize = 0;
+
+	char *FinalAlloc = NULL;
+
+	if (!(TreeContentAlloc = (char *) malloc(TreeContentAllocSize)))
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = git_memes_objpath(
+		RepositoryPathBuf, LenRepositoryPath,
+		TreeOid,
+		TreePathBuf, sizeof TreePathBuf, &LenTreePath)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = gs_file_read_tobuffer_block(
+		TreePathBuf, LenTreePath,
+		TreeContentAlloc, TreeContentAllocSize, &LenTreeContentAlloc)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = git_memes_inflate(TreeContentAlloc, LenTreeContentAlloc, &TreeInflated, &TreeType, &TreeOffset, &TreeSize)))
+		GS_GOTO_CLEAN();
+
+	if (TreeType != GIT_OBJ_TREE)
+		GS_ERR_CLEAN(1);
+
+	if (!(FinalAlloc = (char *)malloc(TreeInflated.size)))
+		GS_ERR_CLEAN(1);
+
+	memcpy(FinalAlloc, TreeInflated.ptr, TreeInflated.size);
+
+	if (!!(r = gs_tree_inflated_create(&Tree)))
+		GS_GOTO_CLEAN();
+
+	git_oid_cpy(&Tree->mOid, TreeOid);
+	Tree->mDataBuf = GS_ARGOWN(&FinalAlloc);
+	Tree->mLenData = TreeInflated.size;
+	Tree->mTreeOffset = TreeOffset;
+	Tree->mTreeSize = TreeSize;
+
+	if (oTree)
+		*oTree = GS_ARGOWN(&Tree);
+
+clean:
+	if (FinalAlloc)
+		free(FinalAlloc);
+	if (TreeContentAlloc)
+		free(TreeContentAlloc);
+	git_buf_free(&TreeInflated);
+	GS_DELETE_F(&Tree, gs_tree_inflated_destroy);
+
+	return r;
+}
+
+int gs_treelist(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	git_oid *TreeOid,
+	struct GsTreeInflatedNode **oTopoList)
+{
+	int r = 0;
+
+	struct GsTreeInflated *Tree = NULL;
+	struct GsTreeInflatedNode *NodeListTopo = NULL;
+
+	int OutputIdx = 0;
+
+	if (!!(r = gs_git_read_tree(RepositoryPathBuf, LenRepositoryPath, TreeOid, GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT, &Tree)))
+		goto clean;
+
+	if (!!(r = tree_toposort_2(RepositoryPathBuf, LenRepositoryPath, GS_ARGOWN(&Tree), &NodeListTopo)))
+		goto clean;
+
+	/* output in reverse topological order */
+	if (!!(r = gs_tree_inflated_node_list_reverse(&NodeListTopo)))
+		goto clean;
+
+	if (oTopoList)
+		*oTopoList = GS_ARGOWN(&NodeListTopo);
+
+clean:
+	GS_DELETE_F(&NodeListTopo, gs_tree_inflated_node_list_destroy);
+	GS_DELETE_F(&Tree, gs_tree_inflated_destroy);
 
 	return r;
 }

@@ -84,7 +84,7 @@ int gs_ev_clnt_state_received_oneshot_blob_cond(
 	if (!!(r = aux_frame_read_oid(Packet->data, Packet->dataLength, Offset, &Offset, OidReceivedHdr.id, GIT_OID_RAWSZ)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = git_memes_deflate((const char *) Packet->data + Offset, LengthLimit - Offset, &Inflated, &Type, &BlobOffset, &BlobSize)))
+	if (!!(r = git_memes_inflate((const char *) Packet->data + Offset, LengthLimit - Offset, &Inflated, &Type, &BlobOffset, &BlobSize)))
 		GS_GOTO_CLEAN();
 
 	if (Type != GIT_OBJ_BLOB)

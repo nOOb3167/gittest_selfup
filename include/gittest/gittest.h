@@ -14,6 +14,8 @@
 #include <gittest/misc.h>
 #include <gittest/bypart.h>
 
+#define GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT (1024 * 1024 * 4)
+
 #define GS_OID_STR_VAR(VARNAME) \
 	char VARNAME ## Str [GIT_OID_HEXSZ + 1] = {};
 #define GS_OID_STR_MAKE(VARNAME) \
@@ -31,6 +33,20 @@ struct oid_comparator_v_t {
 	}
 };
 
+struct GsTreeInflated
+{
+	git_oid mOid;
+	const char *mDataBuf; size_t mLenData;
+	size_t mTreeOffset;
+	size_t mTreeSize;
+};
+
+struct GsTreeInflatedNode
+{
+	struct GsTreeInflated     *mData;
+	struct GsTreeInflatedNode *mNext;
+};
+
 typedef ::std::set<const git_oid *, oid_comparator_t> toposet_t;
 typedef ::std::list<git_tree *> topolist_t;
 
@@ -38,6 +54,14 @@ int gs_reach_refs(git_repository *Repository, gs_bypart_cb_t cb, void *ctx);
 
 int tree_toposort_visit(git_repository *Repository, toposet_t *MarkSet, topolist_t *NodeList, git_tree *Tree);
 int tree_toposort(git_repository *Repository, git_tree *Tree, topolist_t *oNodeList);
+
+int tree_toposort_visit2(const char *RepositoryPathBuf, size_t LenRepositoryPath, toposet_t *MarkSet, struct GsTreeInflatedNode **NodeList, struct GsTreeInflated *Tree);
+int tree_toposort_2(const char *RepositoryPathBuf, size_t LenRepositoryPath, struct GsTreeInflated *Tree, struct GsTreeInflatedNode **oNodeList);
+int gs_tree_inflated_create(struct GsTreeInflated **oTree);
+int gs_tree_inflated_destroy(struct GsTreeInflated *ioTree);
+int gs_tree_inflated_node_destroy(struct GsTreeInflatedNode *ioNode);
+int gs_tree_inflated_node_list_destroy(struct GsTreeInflatedNode *ioHead);
+int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List);
 
 int aux_gittest_init();
 void aux_uint32_to_LE(uint32_t a, char *oBuf, size_t bufsize);
@@ -128,6 +152,20 @@ int aux_objects_until_sizelimit(
 	const git_oid *Oid, size_t NumOid,
 	size_t SoftSizeLimit,
 	size_t *oNumUntilSizeLimit);
+
+int gs_latest_commit_tree_oid(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	const char *RefNameBuf, size_t LenRefName,
+	git_oid *oCommitHeadOid, git_oid *oTreeHeadOid);
+int gs_git_read_tree(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	git_oid *TreeOid,
+	size_t TreeRawSizeLimit,
+	struct GsTreeInflated **oTree);
+int gs_treelist(
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
+	git_oid *TreeOid,
+	struct GsTreeInflatedNode **oTopoList);
 
 int stuff(
 	const char *RefName, size_t LenRefName,
