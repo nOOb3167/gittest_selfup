@@ -258,8 +258,13 @@ int gs_net4_serv_state_crank3(
 		if (!!(r = aux_frame_read_size_ensure(Packet->data, Packet->dataLength, Offset, &Offset, 0)))
 			GS_GOTO_CLEAN();
 
-		if (!!(r = serv_latest_commit_tree_oid(Ctx->mRepository, Ctx->mCommonVars.RefNameMainBuf, &CommitHeadOid, &TreeHeadOid)))
+		if (!!(r = gs_latest_commit_tree_oid(
+			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			Ctx->mCommonVars.RefNameMainBuf, Ctx->mCommonVars.LenRefNameMain,
+			&CommitHeadOid, &TreeHeadOid)))
+		{
 			GS_GOTO_CLEAN();
+		}
 
 		if (!!(r = aux_frame_full_write_response_latest_commit_tree(TreeHeadOid.id, GIT_OID_RAWSZ, gs_bysize_cb_String, &BysizeResponseBuffer)))
 			GS_GOTO_CLEAN();
@@ -274,30 +279,39 @@ int gs_net4_serv_state_crank3(
 		std::string ResponseBuffer;
 		uint32_t Offset = OffsetSize;
 		git_oid TreeOid = {};
-		std::vector<git_oid> Treelist;
-		GsStrided TreelistStrided = {};
+		struct GsTreeInflatedNode *TreeList = NULL;
+		std::vector<git_oid> TreeVec;
+		GsStrided TreeVecStrided = {};
 
 		GS_BYPART_DATA_VAR(String, BysizeResponseBuffer);
 		GS_BYPART_DATA_INIT(String, BysizeResponseBuffer, &ResponseBuffer);
 
 		if (!!(r = aux_frame_read_size_ensure(Packet->data, Packet->dataLength, Offset, &Offset, GS_PAYLOAD_OID_LEN)))
-			GS_GOTO_CLEAN();
+			GS_GOTO_CLEAN_J(treelist);
 
 		if (!!(r = aux_frame_read_oid(Packet->data, Packet->dataLength, Offset, &Offset, TreeOid.id, GIT_OID_RAWSZ)))
-			GS_GOTO_CLEAN();
+			GS_GOTO_CLEAN_J(treelist);
 
-		if (!!(r = serv_oid_treelist(Ctx->mRepository, &TreeOid, &Treelist)))
-			GS_GOTO_CLEAN();
+		if (!!(r = gs_treelist(git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)), &TreeOid, &TreeList)))
+			GS_GOTO_CLEAN_J(treelist);
 
-		GS_LOG(I, PF, "listing trees [num=%d]", (int)Treelist.size());
+		for (struct GsTreeInflatedNode *it = TreeList; it; it = it->mNext)
+			TreeVec.push_back(it->mData->mOid);
 
-		if (!!(r = gs_strided_for_oid_vec_cpp(&Treelist, &TreelistStrided)))
-			GS_GOTO_CLEAN();
+		GS_LOG(I, PF, "listing trees [num=%d]", (int)TreeVec.size());
 
-		if (!!(r = aux_frame_full_write_response_treelist(TreelistStrided, gs_bysize_cb_String, &BysizeResponseBuffer)))
-			GS_GOTO_CLEAN();
+		if (!!(r = gs_strided_for_oid_vec_cpp(&TreeVec, &TreeVecStrided)))
+			GS_GOTO_CLEAN_J(treelist);
+
+		if (!!(r = aux_frame_full_write_response_treelist(TreeVecStrided, gs_bysize_cb_String, &BysizeResponseBuffer)))
+			GS_GOTO_CLEAN_J(treelist);
 
 		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+			GS_GOTO_CLEAN_J(treelist);
+
+	clean_treelist:
+		GS_DELETE_F(&TreeList, gs_tree_inflated_node_list_destroy);
+		if (!!r)
 			GS_GOTO_CLEAN();
 	}
 	break;
