@@ -455,7 +455,7 @@ int crank1readnet(struct XsConCtx *Ctx)
 		// FIXME: only grows, never shrinks
 		if (SpaceLeft < XS_RCV_BUF_SPACE_LEFT_MIN) {
 			char *NewBuf = NULL;
-			if (! (NewBuf = (char *)realloc(Ctx->mRcvBuf.mBuf, Ctx->mRcvBuf.mBufSize * 2)))
+			if (! (NewBuf = (char *)gs_realloc(Ctx->mRcvBuf.mBuf, Ctx->mRcvBuf.mBufSize * 2)))
 				assert(0);
 			Ctx->mRcvBuf.mBuf = NewBuf;
 			Ctx->mRcvBuf.mBufSize *= 2;

@@ -39,6 +39,7 @@ struct GsTreeInflated
 	const char *mDataBuf; size_t mLenData;
 	size_t mTreeOffset;
 	size_t mTreeSize;
+	const char *mDeflatedBuf; size_t mLenDeflated;
 };
 
 struct GsTreeInflatedNode
@@ -59,6 +60,7 @@ int tree_toposort_visit2(const char *RepositoryPathBuf, size_t LenRepositoryPath
 int tree_toposort_2(const char *RepositoryPathBuf, size_t LenRepositoryPath, struct GsTreeInflated *Tree, struct GsTreeInflatedNode **oNodeList);
 int gs_tree_inflated_create(struct GsTreeInflated **oTree);
 int gs_tree_inflated_destroy(struct GsTreeInflated *ioTree);
+int gs_tree_inflated_destroy_dataonly(struct GsTreeInflated *ioTree);
 int gs_tree_inflated_node_destroy(struct GsTreeInflatedNode *ioNode);
 int gs_tree_inflated_node_list_destroy(struct GsTreeInflatedNode *ioHead);
 int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List);
@@ -161,6 +163,7 @@ int gs_git_read_tree(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	git_oid *TreeOid,
 	size_t TreeRawSizeLimit,
+	int AlsoFillOutDeflated,
 	struct GsTreeInflated **oTree);
 int gs_treelist(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
