@@ -42,7 +42,7 @@ int gs_strided_for_oid_vec(
 	uint32_t DataOffsetPlusOffset = DataOffset + offsetof(git_oid, id);
 	uint32_t EltNum = OidVecNum;
 	uint32_t EltSize = GIT_OID_RAWSZ;
-	uint32_t EltStride = sizeof (git_oid);
+	uint32_t EltStride = sizeof *OidVec;
 
 	GsStrided Strided = {
 		DataStart,
@@ -52,9 +52,7 @@ int gs_strided_for_oid_vec(
 		EltStride,
 	};
 
-	uint32_t DataLength = OidVecNum * sizeof (git_oid);
-
-	if (EltSize > EltStride || DataOffset + EltStride * EltNum > DataLength)
+	if (EltSize > EltStride || DataOffset + EltStride * EltNum > EltStride * OidVecNum)
 		GS_ERR_CLEAN(1);
 
 	if (oStrided)
@@ -65,15 +63,16 @@ clean:
 	return r;
 }
 
-int gs_strided_for_oid_vec_cpp(std::vector<git_oid> *OidVec, GsStrided *oStrided) {
+int gs_strided_for_oid_vec_cpp(std::vector<git_oid> *OidVec, GsStrided *oStrided)
+{
 	int r = 0;
 
 	uint8_t *DataStart = (uint8_t *)OidVec->data();
 	uint32_t DataOffset = 0;
 	uint32_t DataOffsetPlusOffset = DataOffset + offsetof(git_oid, id);
 	uint32_t EltNum = OidVec->size();
-	uint32_t EltSize = sizeof *OidVec->data();
-	uint32_t EltStride = GIT_OID_RAWSZ;
+	uint32_t EltSize = GIT_OID_RAWSZ;
+	uint32_t EltStride = sizeof *OidVec->data();
 
 	GsStrided Strided = {
 		DataStart,
@@ -83,9 +82,7 @@ int gs_strided_for_oid_vec_cpp(std::vector<git_oid> *OidVec, GsStrided *oStrided
 		EltStride,
 	};
 
-	uint32_t DataLength = OidVec->size() * sizeof *OidVec->data();
-
-	if (EltSize > EltStride || DataOffset + EltStride * EltNum > DataLength)
+	if (EltSize > EltStride || DataOffset + EltStride * EltNum > EltStride * OidVec->size())
 		GS_ERR_CLEAN(1);
 
 	if (oStrided)
