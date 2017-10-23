@@ -64,6 +64,9 @@ int gs_tree_inflated_destroy_dataonly(struct GsTreeInflated *ioTree);
 int gs_tree_inflated_node_destroy(struct GsTreeInflatedNode *ioNode);
 int gs_tree_inflated_node_list_destroy(struct GsTreeInflatedNode *ioHead);
 int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List);
+int gs_tree_inflated_vec_serialize(
+	const GsTreeInflated **TreeListVec, size_t NumTreeList,
+	std::string *oSizeBuffer, std::string *oObjectBuffer);
 
 int aux_gittest_init();
 void aux_uint32_to_LE(uint32_t a, char *oBuf, size_t bufsize);

@@ -359,6 +359,42 @@ int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List)
 	return 0;
 }
 
+int gs_tree_inflated_vec_serialize(
+	const GsTreeInflated **TreeListVec, size_t NumTreeList,
+	std::string *oSizeBuffer, std::string *oObjectBuffer)
+{
+	int r = 0;
+
+	size_t ObjectCumulativeSize = 0;
+	std::string SizeBuffer;
+	std::string ObjectBuffer;
+
+	for (uint32_t i = 0; i < NumTreeList; i++)
+		ObjectCumulativeSize += TreeListVec[i]->mLenDeflated;
+
+	SizeBuffer.reserve(NumTreeList * sizeof(uint32_t));
+	ObjectBuffer.reserve(ObjectCumulativeSize);
+
+	for (uint32_t i = 0; i < NumTreeList; i++) {
+		char sizebuf[sizeof(uint32_t)] = {};
+		aux_uint32_to_LE(TreeListVec[i]->mLenDeflated, sizebuf, sizeof sizebuf);
+		SizeBuffer.append(sizebuf,
+			sizeof sizebuf);
+		ObjectBuffer.append(TreeListVec[i]->mDeflatedBuf,
+			TreeListVec[i]->mLenDeflated);
+	}
+
+	if (oSizeBuffer)
+		oSizeBuffer->swap(SizeBuffer);
+
+	if (oObjectBuffer)
+		oObjectBuffer->swap(ObjectBuffer);
+
+clean:
+
+	return r;
+}
+
 int aux_gittest_init() {
 	git_libgit2_init();
 	return 0;
