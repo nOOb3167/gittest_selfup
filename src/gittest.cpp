@@ -1620,6 +1620,38 @@ clean:
 	return r;
 }
 
+int gs_git_tree_blob_byname(
+	struct GsTreeInflated *Tree,
+	const char *WantedBlobNameBuf, size_t LenWantedBlobName,
+	git_oid *oBlobOid)
+{
+	int r = 0;
+
+	size_t Offset = 0;
+	unsigned long long Mode = 0;
+	const char *FileName = NULL;
+	size_t FileNameLen = 0;
+	git_oid EntryOid = {};
+
+	while (!(r = git_memes_tree(Tree->mDataBuf, Tree->mLenData, &Offset, &Mode, &FileName, &FileNameLen, &EntryOid)) && Offset != -1) {
+		// FIXME: really GIT_FILEMODE_BLOB_EXECUTABLE? makes sense but what about just GIT_FILEMODE_BLOB?
+		if (Mode != GIT_FILEMODE_BLOB_EXECUTABLE)
+			continue;
+		if (LenWantedBlobName == FileNameLen && ! strncmp(WantedBlobNameBuf, FileName, FileNameLen)) {
+			git_oid_cpy(oBlobOid, &EntryOid);
+			GS_ERR_NO_CLEAN(0);
+		}
+	}
+
+	GS_ERR_CLEAN(1);
+
+noclean:
+
+clean:
+
+	return r;
+}
+
 int gs_treelist(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	git_oid *TreeOid,

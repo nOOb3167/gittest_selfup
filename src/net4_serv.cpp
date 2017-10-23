@@ -540,23 +540,49 @@ int gs_net4_serv_state_crank3(
 		git_oid CommitHeadOid = {};
 		git_oid TreeHeadOid = {};
 		git_oid BlobSelfUpdateOid = {};
+		struct GsTreeInflated *TreeHead = NULL;
 
 		GS_BYPART_DATA_VAR(String, BysizeResponseBuffer);
 		GS_BYPART_DATA_INIT(String, BysizeResponseBuffer, &ResponseBuffer);
 
 		if (!!(r = aux_frame_read_size_ensure(Packet->data, Packet->dataLength, Offset, &Offset, 0)))
-			GS_GOTO_CLEAN();
+			GS_GOTO_CLEAN_J(lsu);
 
-		if (!!(r = serv_latest_commit_tree_oid(Ctx->mRepositorySelfUpdate, Ctx->mCommonVars.RefNameSelfUpdateBuf, &CommitHeadOid, &TreeHeadOid)))
-			GS_GOTO_CLEAN();
+		if (!!(r = gs_latest_commit_tree_oid(
+			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			Ctx->mCommonVars.RefNameSelfUpdateBuf, Ctx->mCommonVars.LenRefNameSelfUpdate,
+			&CommitHeadOid, &TreeHeadOid)))
+		{
+			GS_GOTO_CLEAN_J(lsu);
+		}
 
-		if (!!(r = aux_oid_tree_blob_byname(Ctx->mRepositorySelfUpdate, &TreeHeadOid, Ctx->mCommonVars.SelfUpdateBlobNameBuf, &BlobSelfUpdateOid)))
-			GS_GOTO_CLEAN();
+		if (!!(r = gs_git_read_tree(
+			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			&TreeHeadOid,
+			GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT,
+			false,
+			&TreeHead)))
+		{
+			GS_GOTO_CLEAN_J(lsu);
+		}
+
+		if (!!(r = gs_git_tree_blob_byname(
+			TreeHead,
+			Ctx->mCommonVars.SelfUpdateBlobNameBuf, Ctx->mCommonVars.LenSelfUpdateBlobName,
+			&BlobSelfUpdateOid)))
+		{
+			GS_GOTO_CLEAN_J(lsu);
+		}
 
 		if (!!(r = aux_frame_full_write_response_latest_selfupdate_blob(BlobSelfUpdateOid.id, GIT_OID_RAWSZ, gs_bysize_cb_String, &BysizeResponseBuffer)))
-			GS_GOTO_CLEAN();
+			GS_GOTO_CLEAN_J(lsu);
 
 		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+			GS_GOTO_CLEAN_J(lsu);
+
+	clean_lsu:
+		GS_DELETE_F(&TreeHead, gs_tree_inflated_destroy);
+		if (!!r)
 			GS_GOTO_CLEAN();
 	}
 	break;

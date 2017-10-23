@@ -168,6 +168,10 @@ int gs_git_read_tree(
 	size_t TreeRawSizeLimit,
 	int AlsoFillOutDeflated,
 	struct GsTreeInflated **oTree);
+int gs_git_tree_blob_byname(
+	struct GsTreeInflated *Tree,
+	const char *WantedBlobNameBuf, size_t LenWantedBlobName,
+	git_oid *oBlobOid);
 int gs_treelist(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	git_oid *TreeOid,
