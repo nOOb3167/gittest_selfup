@@ -33,6 +33,7 @@ struct XsCacheHead
 {
 	git_oid mOid;
 	struct GsTreeInflatedNode * mNodeList;
+	std::map<git_oid *, GsTreeInflated *, oid_comparator_t> mOidMap;
 };
 
 struct XsCacheHeadDeleter
@@ -102,6 +103,10 @@ int gs_cache_head_aux_refresh(
 		NewCacheHead = sp<XsCacheHead>(new XsCacheHead(), struct XsCacheHeadDeleter());
 		NewCacheHead->mNodeList = GS_ARGOWN(&NodeList);
 		git_oid_cpy(&NewCacheHead->mOid, WantedTreeHeadOid);
+		NewCacheHead->mOidMap.clear();
+		for (struct GsTreeInflatedNode *it = NewCacheHead->mNodeList; it; it = it->mNext)
+			NewCacheHead->mOidMap.insert(std::make_pair(&it->mData->mOid, it->mData));
+
 
 		CacheHeadAux->mHead = NewCacheHead;
 	}
@@ -122,10 +127,10 @@ int gs_trees_from_existing_or_fresh_aux_allzero(struct GsTreeInflated **FreshPai
 	return 0;
 }
 
-int gs_trees_from_existing_or_fresh(
+int gs_cache_head_trees_cached_or_fresh(
+	struct XsCacheHead *Head,
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	git_oid *RequestedVec, size_t NumRequested,
-	struct GsTreeInflatedNode *NodeListExisting,
 	struct GsTreeInflated **ioFreshPairedVec, size_t NumFreshPaired,
 	struct GsTreeInflated **ioOutputPairedVecNotOwned, size_t NumOutputPaired)
 {
@@ -134,30 +139,26 @@ int gs_trees_from_existing_or_fresh(
 	GS_ASSERT(NumRequested == NumFreshPaired && NumRequested == NumOutputPaired);
 	GS_ASSERT(! gs_trees_from_existing_or_fresh_aux_allzero(ioFreshPairedVec, NumFreshPaired));
 
+	struct GsTreeInflated *FreshTree = NULL;
 	size_t FreshPairedIdx = 0;
 
-	std::map<git_oid *, GsTreeInflated *, oid_comparator_t> ExistingMap;
-
-	for (struct GsTreeInflatedNode *it = NodeListExisting; it; it = it->mNext)
-		ExistingMap.insert(std::make_pair(&it->mData->mOid, it->mData));
-
 	for (size_t i = 0; i < NumRequested; i++) {
-		auto it = ExistingMap.find(RequestedVec + i);
-		if (it != ExistingMap.end()) {
+		auto it = Head->mOidMap.find(RequestedVec + i);
+		if (it != Head->mOidMap.end()) {
 			ioOutputPairedVecNotOwned[i] = it->second;
 		}
 		else {
-			const size_t Idx = FreshPairedIdx++;
 			if (!!(r = gs_git_read_tree(
 				RepositoryPathBuf, LenRepositoryPath,
 				RequestedVec + i,
 				GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT,
 				true,
-				&ioFreshPairedVec[Idx])))
+				&FreshTree)))
 			{
 				GS_GOTO_CLEAN();
 			}
-			ioOutputPairedVecNotOwned[i] = ioFreshPairedVec[Idx];
+			ioOutputPairedVecNotOwned[i] = GS_ARGOWN(&FreshTree);
+			ioFreshPairedVec[FreshPairedIdx++] = ioOutputPairedVecNotOwned[i];
 		}
 	}
 
@@ -166,6 +167,8 @@ clean:
 		for (size_t i = 0; i < NumFreshPaired; i++)
 			GS_DELETE_F(&ioFreshPairedVec[i], gs_tree_inflated_destroy);
 	}
+
+	GS_DELETE_F(&FreshTree, gs_tree_inflated_destroy);
 
 	return r;
 }
@@ -488,10 +491,10 @@ int gs_net4_serv_state_crank3(
 		TreeVecFresh.resize(TreelistRequested.size());
 		TreeVecNotOwned.resize(TreelistRequested.size());
 
-		if (!!(r = gs_trees_from_existing_or_fresh(
+		if (!!(r = gs_cache_head_trees_cached_or_fresh(
+			Head.get(),
 			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
 			TreelistRequested.data(), TreelistRequested.size(),
-			Head->mNodeList,
 			TreeVecFresh.data(), TreeVecFresh.size(),
 			TreeVecNotOwned.data(), TreeVecNotOwned.size())))
 		{
