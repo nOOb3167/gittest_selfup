@@ -54,24 +54,31 @@ struct XsRcvBuf
 	size_t mBufOffset;
 };
 
+struct XsConExt
+{
+};
+
 struct XsConCtx
 {
 	int mFd;
+	struct XsConExt *mExt; /*notowned*/
 	struct XsWriteOnly mWriteOnly;
 	struct XsRcvBuf mRcvBuf;
 	/* must set the callbacks - caller inits other members
 	likely want an extra context parameter for communication */
-	int(*CbCtxCreate)(struct XsConCtx **oCtxBase, enum XsSockType Type);
+	int(*CbCtxCreate)(struct XsConCtx **oCtxBase, enum XsSockType Type, struct XsConExt *Ext);
 	int(*CbCtxDestroy)(struct XsConCtx *CtxBase);
 	int(*CbCrank)(struct XsConCtx *CtxBase, struct GsPacket *Packet);
 	int(*CbWriteOnly)(struct XsConCtx *CtxBase);
 };
 
-typedef int(*xs_cb_ctx_create_t)(struct XsConCtx **oCtxBase, enum XsSockType Type);
+typedef int(*xs_cb_ctx_create_t)(struct XsConCtx **oCtxBase, enum XsSockType Type, struct XsConExt *Ext);
 
 int xs_net4_write_frame_outer_header(
 	size_t LenData,
 	char *ioNineCharBuf, size_t NineCharBufSize, size_t *oLenNineCharBuf);
+
+int xs_con_ext_base_init(struct XsConExt *ExtBase);
 
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl);
 int xs_serv_ctl_quit_request(struct XsServCtl *ServCtl);
@@ -87,7 +94,7 @@ int xs_write_only_data_buffer_reset(struct XsWriteOnlyDataBuffer *WriteOnlyDataB
 int xs_write_only_data_buffer_advance(int Fd, struct XsWriteOnlyDataBuffer *Buffer);
 int xs_write_only_data_send_file_advance(int Fd, struct XsWriteOnlyDataSendFile *SendFile);
 
-int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsServCtl **oServCtl);
+int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsConExt *Ext, struct XsServCtl **oServCtl);
 int xs_net4_socket_listen_create(const char *Port, int *oListenFd);
 
 #endif /* _GITTEST_NET4_H_ */

@@ -403,6 +403,11 @@ int xs_net4_write_frame_outer_header(
 	return 0;
 }
 
+int xs_con_ext_base_init(struct XsConExt *ExtBase)
+{
+	return 0;
+}
+
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl)
 {
 	GS_DELETE(&ServCtl, struct XsServCtl);
@@ -736,7 +741,7 @@ clean:
 		GS_ASSERT(0);
 }
 
-int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsServCtl **oServCtl)
+int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsConExt *Ext, struct XsServCtl **oServCtl)
 {
 	int r = 0;
 
@@ -769,10 +774,11 @@ int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsServ
 	if (-1 == (EPollFd = epoll_create1(EPOLL_CLOEXEC)))
 		GS_ERR_CLEAN(1);
 
-	if (!!(r = CbCtxCreate(&ExitCtx, XS_SOCK_TYPE_EVENT)))
+	if (!!(r = CbCtxCreate(&ExitCtx, XS_SOCK_TYPE_EVENT, Ext)))
 		GS_GOTO_CLEAN();
 
 	ExitCtx->mFd = EvtFdExit;
+	ExitCtx->mExt = Ext;
 	ExitEPollCtx = new XsEPollCtx();
 	ExitEPollCtx->mType = XS_SOCK_TYPE_EVENT;
 	ExitEPollCtx->mCtx = ExitCtx;
