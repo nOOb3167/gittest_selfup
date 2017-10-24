@@ -360,7 +360,7 @@ int gs_tree_inflated_node_list_reverse(struct GsTreeInflatedNode **List)
 }
 
 int gs_tree_inflated_vec_serialize(
-	const GsTreeInflated **TreeListVec, size_t NumTreeList,
+	GsTreeInflated **TreeListVec, size_t NumTreeList,
 	std::string *oSizeBuffer, std::string *oObjectBuffer)
 {
 	int r = 0;

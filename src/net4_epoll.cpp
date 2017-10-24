@@ -52,7 +52,7 @@ struct XsEPollCtx
 void sender_func(struct XsServCtl *ServCtl);
 
 // FIXME: temp funcs
-static int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type);
+static int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type, struct XsConExt *Ext);
 static int cbctxdestroy(struct XsConCtx *CtxBase);
 static int cbcrank1(struct XsConCtx *CtxBase, struct GsPacket *Packet);
 static int cbwriteonly1(struct XsConCtx *CtxBase);
@@ -170,7 +170,7 @@ clean:
 		GS_ASSERT(0);
 }
 
-int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type)
+int cbctxcreate(struct XsConCtx **oCtxBase, enum XsSockType Type, struct XsConExt *Ext)
 {
 	struct XsConCtx *Ctx = new XsConCtx();
 
@@ -572,7 +572,7 @@ int accept_1(struct XsConCtx *OldCtx, int EPollFd)
 
 			EPollCtx = new XsEPollCtx();
 
-			if (!!(r = OldCtx->CbCtxCreate(&Ctx, XS_SOCK_TYPE_NORMAL)))
+			if (!!(r = OldCtx->CbCtxCreate(&Ctx, XS_SOCK_TYPE_NORMAL, Ctx->mExt)))
 				GS_GOTO_CLEANSUB();
 
 			Ctx->mFd = NewFd; NewFd = -1;
@@ -793,7 +793,7 @@ int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsConE
 	if (-1 == epoll_ctl(EPollFd, EPOLL_CTL_ADD, ExitCtx->mFd, &ExitEvt))
 		GS_ERR_CLEAN(1);
 
-	if (!!(r = CbCtxCreate(&SockCtx, XS_SOCK_TYPE_LISTEN)))
+	if (!!(r = CbCtxCreate(&SockCtx, XS_SOCK_TYPE_LISTEN, Ext)))
 		GS_GOTO_CLEAN();
 
 	SockCtx->mFd = ListenFd;
@@ -887,7 +887,7 @@ int xs_main(int argc, char **argv)
   if (!! xs_net4_socket_listen_create("3384", &ListenFd))
 	  assert(0);
 
-  if (!! xs_net4_listenme(ListenFd, cbctxcreate, &ServCtl))
+  if (!! xs_net4_listenme(ListenFd, cbctxcreate, NULL, &ServCtl))
     assert(0);
 
   ThreadSend = std::make_shared<std::thread>(sender_func, ServCtl);

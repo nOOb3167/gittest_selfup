@@ -98,4 +98,6 @@ int xs_write_only_data_send_file_advance(int Fd, struct XsWriteOnlyDataSendFile 
 int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsConExt *Ext, struct XsServCtl **oServCtl);
 int xs_net4_socket_listen_create(const char *Port, int *oListenFd);
 
+int gs_net4_serv_start(struct GsAuxConfigCommonVars *CommonVars);
+
 #endif /* _GITTEST_NET4_H_ */

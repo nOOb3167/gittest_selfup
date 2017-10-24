@@ -100,7 +100,7 @@ int gs_cache_head_aux_refresh(
 		if (!!(r = gs_treelist(RepositoryPath, LenRepository, WantedTreeHeadOid, &NodeList)))
 			GS_GOTO_CLEAN();
 
-		NewCacheHead = sp<XsCacheHead>(new XsCacheHead(), struct XsCacheHeadDeleter());
+		NewCacheHead = sp<XsCacheHead>(new XsCacheHead(), XsCacheHeadDeleter());
 		NewCacheHead->mNodeList = GS_ARGOWN(&NodeList);
 		git_oid_cpy(&NewCacheHead->mOid, WantedTreeHeadOid);
 		NewCacheHead->mOidMap.clear();
@@ -481,10 +481,10 @@ int gs_net4_serv_state_crank3(
 		GS_BYPART_DATA_INIT(OidVector, BypartTreelistRequested, &TreelistRequested);
 
 		if (!!(r = aux_frame_read_size_limit(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_SIZE_LEN, &LengthLimit)))
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 
 		if (!!(r = aux_frame_read_oid_vec(Packet->data, LengthLimit, Offset, &Offset, &BypartTreelistRequested, gs_bypart_cb_OidVector)))
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 
 		TreeVecFresh.resize(TreelistRequested.size());
 		TreeVecNotOwned.resize(TreelistRequested.size());
@@ -496,11 +496,11 @@ int gs_net4_serv_state_crank3(
 			TreeVecFresh.data(), TreeVecFresh.size(),
 			TreeVecNotOwned.data(), TreeVecNotOwned.size())))
 		{
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 		}
 
 		if (!!(r = gs_tree_inflated_vec_serialize(TreeVecNotOwned.data(), TreeVecNotOwned.size(), &SizeBufferTree, &ObjectBufferTree)))
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 
 		GS_LOG(I, PF, "serializing trees [requested=%d, serialized=%d]", (int)TreelistRequested.size(), (int)TreeVecNotOwned.size());
 
@@ -510,13 +510,13 @@ int gs_net4_serv_state_crank3(
 			(uint8_t *)ObjectBufferTree.data(), ObjectBufferTree.size(),
 			gs_bysize_cb_String, &BysizeResponseBuffer)))
 		{
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 		}
 
 		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
-			GS_GOTO_CLEAN_J(treelist);
+			GS_GOTO_CLEAN_J(trees);
 
-	clean_treelist:
+	clean_trees:
 		for (size_t i = 0; i < TreeVecFresh.size(); i++)
 			GS_DELETE_F(&TreeVecFresh[i], gs_tree_inflated_destroy);
 		if (!!r)

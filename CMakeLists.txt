@@ -130,6 +130,29 @@ SET_PROPERTY(TARGET gittest_ev2_serv PROPERTY SUFFIX ".exe")
 TARGET_LINK_LIBRARIES(gittest_ev2_serv gittest_common ${GITTEST_DEP_LIBRARIES})
 TARGET_INCLUDE_DIRECTORIES(gittest_ev2_serv PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
 
+# gittest_net4_serv
+
+IF (NOT WIN32)
+
+SET(GITTEST_NET4_SERV_HEADERS
+  include/gittest/net4.h
+  ${GITTEST_LIB_HEADERS}
+  )
+
+SET(GITTEST_NET4_SERV_SOURCES
+  src/net4_epoll.cpp
+  src/net4_serv.cpp
+  src/net4_serv_main.cpp
+  ${GITTEST_LIB_SOURCES}
+)
+
+ADD_EXECUTABLE(gittest_net4_serv ${GITTEST_NET4_SERV_HEADERS} ${GITTEST_NET4_SERV_SOURCES})
+SET_PROPERTY(TARGET gittest_net4_serv PROPERTY SUFFIX ".exe")
+TARGET_LINK_LIBRARIES(gittest_net4_serv gittest_common ${GITTEST_DEP_LIBRARIES})
+TARGET_INCLUDE_DIRECTORIES(gittest_net4_serv PUBLIC ${GITTEST_SELFUP_INCLUDE_DIRS})
+
+ENDIF ()
+
 # gittest_ev2_selfupdate, gittest_ev2_selfupdate_clone
 
 GITTEST_COMMON_GENERATE(${CMAKE_SOURCE_DIR}/data imgpbempty_384_32_ .data)
