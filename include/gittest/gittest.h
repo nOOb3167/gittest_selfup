@@ -158,6 +158,9 @@ int aux_objects_until_sizelimit(
 	size_t SoftSizeLimit,
 	size_t *oNumUntilSizeLimit);
 
+int gs_repo_compute_path(
+	const char *HintPathBuf, size_t LenHintPath,
+	char *ioRepoPathBuf, size_t RepoPathSize, size_t *oLenRepoPath);
 int gs_latest_commit_tree_oid(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	const char *RefNameBuf, size_t LenRefName,

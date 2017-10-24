@@ -408,6 +408,11 @@ int xs_con_ext_base_init(struct XsConExt *ExtBase)
 	return 0;
 }
 
+int xs_con_ext_base_reset(struct XsConExt *ExtBase)
+{
+	return 0;
+}
+
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl)
 {
 	GS_DELETE(&ServCtl, struct XsServCtl);

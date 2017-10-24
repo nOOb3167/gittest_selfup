@@ -1437,6 +1437,32 @@ clean:
 	return r;
 }
 
+int gs_repo_compute_path(
+	const char *HintPathBuf, size_t LenHintPath,
+	char *ioRepoPathBuf, size_t RepoPathSize, size_t *oLenRepoPath)
+{
+	int r = 0;
+
+	git_repository *Repository = NULL;
+	const char *Tmp = NULL;
+	size_t Siz = 0;
+
+	if (!!(r = aux_repository_open(HintPathBuf, LenHintPath, &Repository)))
+		GS_GOTO_CLEAN();
+
+	if (!(Tmp = git_repository_path(Repository)))
+		GS_ERR_CLEAN(1);
+	Siz = strlen(Tmp);
+
+	if (!!(r = gs_buf_copy_zero_terminate(Tmp, Siz, ioRepoPathBuf, RepoPathSize, oLenRepoPath)))
+		GS_GOTO_CLEAN();
+
+clean:
+	git_repository_free(Repository);
+
+	return r;
+}
+
 int gs_latest_commit_tree_oid(
 	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	const char *RefNameBuf, size_t LenRefName,

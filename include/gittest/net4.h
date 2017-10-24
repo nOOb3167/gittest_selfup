@@ -79,6 +79,7 @@ int xs_net4_write_frame_outer_header(
 	char *ioNineCharBuf, size_t NineCharBufSize, size_t *oLenNineCharBuf);
 
 int xs_con_ext_base_init(struct XsConExt *ExtBase);
+int xs_con_ext_base_reset(struct XsConExt *ExtBase);
 
 int xs_serv_ctl_destroy(struct XsServCtl *ServCtl);
 int xs_serv_ctl_quit_request(struct XsServCtl *ServCtl);

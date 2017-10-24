@@ -55,16 +55,16 @@ struct XsConExtServ
 	struct XsConExt base;
 
 	struct XsCacheHeadAux mCacheHead;
+
+	struct GsAuxConfigCommonVars mCommonVars;
+	char mRepositoryPathBuf[512]; size_t LenRepositoryPath;
+	char mRepositorySelfUpdatePathBuf[512]; size_t LenRepositorySelfUpdatePath;
 };
 
 struct XsConCtxServ
 {
 	struct XsConCtx base;
 	struct XsConExtServ *mExt;
-
-	struct GsAuxConfigCommonVars mCommonVars;
-	git_repository *mRepository;
-	git_repository *mRepositorySelfUpdate;
 
 	struct XsConCtxServWriteOnly mWriteOnlyServ;
 };
@@ -301,13 +301,10 @@ int gs_net4_serv_state_service_request_blobs3(
 	struct XsConCtxServ *Ctx,
 	struct GsPacket *Packet,
 	uint32_t OffsetSize,
-	git_repository *Repository,
+	const char *RepositoryPathBuf, size_t LenRepositoryPath,
 	const struct GsFrameType FrameTypeResponse)
 {
 	int r = 0;
-
-	const char *RepositoryPathBuf = NULL;
-	size_t LenRepositoryPath = 0;
 
 	std::string ResponseBuffer;
 	uint32_t Offset = OffsetSize;
@@ -316,11 +313,8 @@ int gs_net4_serv_state_service_request_blobs3(
 	std::string SizeBufferBlob;
 	std::string ObjectBufferBlob;
 
-	size_t ServBlobSoftSizeLimit = Ctx->mCommonVars.ServBlobSoftSizeLimit;
+	size_t ServBlobSoftSizeLimit = Ctx->mExt->mCommonVars.ServBlobSoftSizeLimit;
 	size_t NumUntilSizeLimit = 0;
-
-	RepositoryPathBuf = git_repository_path(Repository);
-	LenRepositoryPath = strlen(RepositoryPathBuf);
 
 	GS_BYPART_DATA_VAR(String, BysizeResponseBuffer);
 	GS_BYPART_DATA_INIT(String, BysizeResponseBuffer, &ResponseBuffer);
@@ -334,11 +328,14 @@ int gs_net4_serv_state_service_request_blobs3(
 	if (!!(r = aux_frame_read_oid_vec(Packet->data, LengthLimit, Offset, &Offset, &BypartBloblistRequested, gs_bypart_cb_OidVector)))
 		GS_GOTO_CLEAN();
 
-	/* the client may be requesting many (and large) blobs
-	   so we have a size limit (for transmission in one response) */
+	// FIXME: fix when it is time to recode the sizelimit mechanism
+	NumUntilSizeLimit = BloblistRequested.size();
+	// FIXME: disabling sizelimit for now
+	///* the client may be requesting many (and large) blobs
+	//   so we have a size limit (for transmission in one response) */
 
-	if (!!(r = aux_objects_until_sizelimit(Repository, BloblistRequested.data(), BloblistRequested.size(), ServBlobSoftSizeLimit, &NumUntilSizeLimit)))
-		GS_GOTO_CLEAN();
+	//if (!!(r = aux_objects_until_sizelimit(Repository, BloblistRequested.data(), BloblistRequested.size(), ServBlobSoftSizeLimit, &NumUntilSizeLimit)))
+	//	GS_GOTO_CLEAN();
 
 	/* if none made it under the size limit, make sure we send at least one, so that progress is made */
 
@@ -363,6 +360,7 @@ int gs_net4_serv_state_crank3(
 	int r = 0;
 
 	struct XsConCtxServ *Ctx = (struct XsConCtxServ *) CtxBase;
+	struct XsConExtServ *Ext = (struct XsConExtServ *) Ctx->mExt;
 
 	uint32_t OffsetStart = 0;
 	uint32_t OffsetSize = 0;
@@ -389,8 +387,8 @@ int gs_net4_serv_state_crank3(
 			GS_GOTO_CLEAN();
 
 		if (!!(r = gs_latest_commit_tree_oid(
-			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
-			Ctx->mCommonVars.RefNameMainBuf, Ctx->mCommonVars.LenRefNameMain,
+			Ext->mRepositoryPathBuf, Ext->LenRepositoryPath,
+			Ext->mCommonVars.RefNameMainBuf, Ext->mCommonVars.LenRefNameMain,
 			&CommitHeadOid, &TreeHeadOid)))
 		{
 			GS_GOTO_CLEAN();
@@ -398,7 +396,7 @@ int gs_net4_serv_state_crank3(
 
 		if (!!(r = gs_cache_head_aux_refresh(
 			&Ctx->mExt->mCacheHead,
-			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			Ext->mRepositoryPathBuf, Ext->LenRepositoryPath,
 			&TreeHeadOid)))
 		{
 			GS_GOTO_CLEAN();
@@ -438,7 +436,7 @@ int gs_net4_serv_state_crank3(
 			TreeListChosenNotOwned = Head->mNodeList;
 		}
 		else {
-			if (!!(r = gs_treelist(git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)), &TreeOid, &TreeList)))
+			if (!!(r = gs_treelist(Ext->mRepositoryPathBuf, Ext->LenRepositoryPath, &TreeOid, &TreeList)))
 				GS_GOTO_CLEAN_J(treelist);
 			TreeListChosenNotOwned = TreeList;
 		}
@@ -493,7 +491,7 @@ int gs_net4_serv_state_crank3(
 
 		if (!!(r = gs_cache_head_trees_cached_or_fresh(
 			Head.get(),
-			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			Ext->mRepositoryPathBuf, Ext->LenRepositoryPath,
 			TreelistRequested.data(), TreelistRequested.size(),
 			TreeVecFresh.data(), TreeVecFresh.size(),
 			TreeVecNotOwned.data(), TreeVecNotOwned.size())))
@@ -528,8 +526,14 @@ int gs_net4_serv_state_crank3(
 
 	case GS_FRAME_TYPE_REQUEST_BLOBS3:
 	{
-		if (!!(r = gs_net4_serv_state_service_request_blobs3(Ctx, Packet, OffsetSize, Ctx->mRepository, GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
+		if (!!(r = gs_net4_serv_state_service_request_blobs3(
+			Ctx,
+			Packet, OffsetSize,
+			Ext->mCommonVars.RepoMainPathBuf, Ext->mCommonVars.LenRepoMasterUpdatePath,
+			GS_FRAME_TYPE_DECL(RESPONSE_BLOBS3))))
+		{
 			GS_GOTO_CLEAN();
+		}
 	}
 	break;
 
@@ -549,15 +553,15 @@ int gs_net4_serv_state_crank3(
 			GS_GOTO_CLEAN_J(lsu);
 
 		if (!!(r = gs_latest_commit_tree_oid(
-			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
-			Ctx->mCommonVars.RefNameSelfUpdateBuf, Ctx->mCommonVars.LenRefNameSelfUpdate,
+			Ext->mRepositoryPathBuf, Ext->LenRepositoryPath,
+			Ext->mCommonVars.RefNameSelfUpdateBuf, Ext->mCommonVars.LenRefNameSelfUpdate,
 			&CommitHeadOid, &TreeHeadOid)))
 		{
 			GS_GOTO_CLEAN_J(lsu);
 		}
 
 		if (!!(r = gs_git_read_tree(
-			git_repository_path(Ctx->mRepository), strlen(git_repository_path(Ctx->mRepository)),
+			Ext->mRepositoryPathBuf, Ext->LenRepositoryPath,
 			&TreeHeadOid,
 			GS_FIXME_ARBITRARY_TREE_MAX_SIZE_LIMIT,
 			false,
@@ -568,7 +572,7 @@ int gs_net4_serv_state_crank3(
 
 		if (!!(r = gs_git_tree_blob_byname(
 			TreeHead,
-			Ctx->mCommonVars.SelfUpdateBlobNameBuf, Ctx->mCommonVars.LenSelfUpdateBlobName,
+			Ext->mCommonVars.SelfUpdateBlobNameBuf, Ext->mCommonVars.LenSelfUpdateBlobName,
 			&BlobSelfUpdateOid)))
 		{
 			GS_GOTO_CLEAN_J(lsu);
@@ -723,18 +727,22 @@ clean:
 	return r;
 }
 
-int gs_net4_serv_start()
+int gs_net4_serv_start(struct GsAuxConfigCommonVars *CommonVars)
 {
 	int r = 0;
 
 	int ListenFd = -1;
-	struct XsConExtServ *Ext = NULL;
+	struct XsConExtServ *Ext = new XsConExtServ();
 	struct XsServCtl *ServCtl = NULL;
 
 	if (!!(r = xs_net4_socket_listen_create("3384", &ListenFd)))
 		GS_GOTO_CLEAN();
 
-	Ext = new XsConExtServ();
+	Ext->mCommonVars = *CommonVars;
+	if (!!(r = gs_repo_compute_path(CommonVars->RepoMainPathBuf, CommonVars->LenRepoMainPath, Ext->mRepositoryPathBuf, sizeof Ext->mRepositoryPathBuf, &Ext->LenRepositoryPath)))
+		GS_GOTO_CLEAN();
+	if (!!(r = gs_repo_compute_path(CommonVars->RepoSelfUpdatePathBuf, CommonVars->LenRepoSelfUpdatePath, Ext->mRepositorySelfUpdatePathBuf, sizeof Ext->mRepositorySelfUpdatePathBuf, &Ext->LenRepositorySelfUpdatePath)))
+		GS_GOTO_CLEAN();
 	if (!!(r = xs_con_ext_base_init(&Ext->base)))
 		GS_GOTO_CLEAN();
 
@@ -745,6 +753,8 @@ int gs_net4_serv_start()
 		GS_GOTO_CLEAN();
 
 clean:
+	GS_RELEASE_F(&Ext->base, xs_con_ext_base_reset);
+	// FIXME: resets base but leaks rest
 	GS_DELETE_F(&ServCtl, xs_serv_ctl_destroy);
 
 	return r;
