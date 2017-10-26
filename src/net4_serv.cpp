@@ -735,7 +735,7 @@ int gs_net4_serv_start(struct GsAuxConfigCommonVars *CommonVars)
 	struct XsConExtServ *Ext = new XsConExtServ();
 	struct XsServCtl *ServCtl = NULL;
 
-	if (!!(r = xs_net4_socket_listen_create("3384", &ListenFd)))
+	if (!!(r = xs_net4_socket_listen_create(std::to_string(CommonVars->ServPort).c_str(), &ListenFd)))
 		GS_GOTO_CLEAN();
 
 	Ext->mCommonVars = *CommonVars;

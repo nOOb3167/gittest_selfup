@@ -76,7 +76,7 @@ void sender_func(struct XsServCtl *ServCtl)
 	int ConnectFd = -1;
 
 	const char Loopback[] = "127.0.0.1";
-	const char Port[] = "3384";
+	const char Port[] = "3756";
 
 	struct addrinfo Hints = {};
 	struct addrinfo *Res = NULL, *Rp = NULL;
@@ -602,10 +602,11 @@ int accept_1(struct XsConCtx *OldCtx, int EPollFd)
 
 			EPollCtx = new XsEPollCtx();
 
-			if (!!(r = OldCtx->CbCtxCreate(&Ctx, XS_SOCK_TYPE_NORMAL, Ctx->mExt)))
+			if (!!(r = OldCtx->CbCtxCreate(&Ctx, XS_SOCK_TYPE_NORMAL, OldCtx->mExt)))
 				GS_GOTO_CLEANSUB();
 
 			Ctx->mFd = NewFd; NewFd = -1;
+			Ctx->mExt = OldCtx->mExt;
 			Ctx->mRcvBuf.mBufSize = XS_RCV_BUF_STA_SIZE;
 			Ctx->mRcvBuf.mBufLen = 0;
 			Ctx->mRcvBuf.mBuf = (char *)malloc(XS_RCV_BUF_STA_SIZE);
@@ -827,6 +828,7 @@ int xs_net4_listenme(int ListenFd, xs_cb_ctx_create_t CbCtxCreate, struct XsConE
 		GS_GOTO_CLEAN();
 
 	SockCtx->mFd = ListenFd;
+	SockCtx->mExt = Ext;
 	SockEPollCtx = new XsEPollCtx();
 	SockEPollCtx->mType = XS_SOCK_TYPE_LISTEN;
 	SockEPollCtx->mCtx = SockCtx;
@@ -914,7 +916,7 @@ int xs_main(int argc, char **argv)
   struct XsServCtl *ServCtl = NULL;
   sp<std::thread> ThreadSend;
 
-  if (!! xs_net4_socket_listen_create("3384", &ListenFd))
+  if (!! xs_net4_socket_listen_create("3756", &ListenFd))
 	  assert(0);
 
   if (!! xs_net4_listenme(ListenFd, cbctxcreate, NULL, &ServCtl))
