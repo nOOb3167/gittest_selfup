@@ -284,6 +284,36 @@ int xs_write_only_data_buffer_init_copying2(
 	return 0;
 }
 
+int xs_write_only_data_buffer_init_copying_outering(
+	struct XsWriteOnly *WriteOnly,
+	const char *HdrPlusPayloadBuf, size_t LenHdrPlusPayload)
+{
+	int r = 0;
+
+	char HdrOuterBuf[9] = {};
+	size_t LenHdrOuter = 0;
+
+	if (WriteOnly->mType != XS_WRITE_ONLY_TYPE_NONE)
+		GS_ERR_CLEAN(1);
+
+	if (!!(r = xs_net4_write_frame_outer_header(LenHdrPlusPayload, HdrOuterBuf, sizeof HdrOuterBuf, &LenHdrOuter)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = xs_write_only_data_buffer_init_copying2(
+		& WriteOnly->mData.mBuffer,
+		HdrOuterBuf, LenHdrOuter,
+		HdrPlusPayloadBuf, LenHdrPlusPayload)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	WriteOnly->mType = XS_WRITE_ONLY_TYPE_BUFFER;
+
+clean:
+
+	return r;
+}
+
 int xs_write_only_data_buffer_reset(struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer)
 {
 	if (WriteOnlyDataBuffer->mBuf)

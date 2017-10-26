@@ -405,7 +405,7 @@ int gs_net4_serv_state_crank3(
 		if (!!(r = aux_frame_full_write_response_latest_commit_tree(TreeHeadOid.id, GIT_OID_RAWSZ, gs_bysize_cb_String, &BysizeResponseBuffer)))
 			GS_GOTO_CLEAN();
 
-		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+		if (!!(r = xs_write_only_data_buffer_init_copying_outering(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
 			GS_GOTO_CLEAN();
 	}
 	break;
@@ -452,7 +452,7 @@ int gs_net4_serv_state_crank3(
 		if (!!(r = aux_frame_full_write_response_treelist(TreeVecStrided, gs_bysize_cb_String, &BysizeResponseBuffer)))
 			GS_GOTO_CLEAN_J(treelist);
 
-		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+		if (!!(r = xs_write_only_data_buffer_init_copying_outering(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
 			GS_GOTO_CLEAN_J(treelist);
 
 	clean_treelist:
@@ -513,7 +513,7 @@ int gs_net4_serv_state_crank3(
 			GS_GOTO_CLEAN_J(trees);
 		}
 
-		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+		if (!!(r = xs_write_only_data_buffer_init_copying_outering(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
 			GS_GOTO_CLEAN_J(trees);
 
 	clean_trees:
@@ -581,7 +581,7 @@ int gs_net4_serv_state_crank3(
 		if (!!(r = aux_frame_full_write_response_latest_selfupdate_blob(BlobSelfUpdateOid.id, GIT_OID_RAWSZ, gs_bysize_cb_String, &BysizeResponseBuffer)))
 			GS_GOTO_CLEAN_J(lsu);
 
-		if (!!(r = xs_write_only_data_buffer_init_copying(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
+		if (!!(r = xs_write_only_data_buffer_init_copying_outering(& Ctx->base.mWriteOnly, ResponseBuffer.data(), ResponseBuffer.size())))
 			GS_GOTO_CLEAN_J(lsu);
 
 	clean_lsu:

@@ -90,6 +90,9 @@ int xs_write_only_data_buffer_init_copying2(
 	struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer,
 	const char *Data1Buf, size_t LenData1,
 	const char *Data2Buf, size_t LenData2);
+int xs_write_only_data_buffer_init_copying_outering(
+	struct XsWriteOnly *WriteOnly,
+	const char *HdrPlusPayloadBuf, size_t LenHdrPlusPayload);
 int xs_write_only_data_buffer_reset(struct XsWriteOnlyDataBuffer *WriteOnlyDataBuffer);
 
 int xs_write_only_data_buffer_advance(int Fd, struct XsWriteOnlyDataBuffer *Buffer);
