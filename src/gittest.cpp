@@ -289,7 +289,7 @@ int gs_tree_inflated_create(struct GsTreeInflated **oTree)
 {
 	if (!(*oTree = (struct GsTreeInflated *) malloc(sizeof **oTree)))
 		return 1;
-	(*oTree) = {};
+	*(*oTree) = {};
 	return 0;
 }
 
