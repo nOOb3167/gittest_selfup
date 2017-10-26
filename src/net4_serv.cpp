@@ -74,6 +74,23 @@ static int cbctxdestroy(struct XsConCtx *CtxBase);
 static int cbcrank1(struct XsConCtx *CtxBase, struct GsPacket *Packet);
 static int cbwriteonly1(struct XsConCtx *CtxBase);
 
+int gs_cache_head_aux_init_default(struct XsCacheHeadAux *CacheHeadAux)
+{
+	int r = 0;
+
+	sp<XsCacheHead> NewCacheHead;
+
+	NewCacheHead = sp<XsCacheHead>(new XsCacheHead(), XsCacheHeadDeleter());
+	NewCacheHead->mOid = {};
+	NewCacheHead->mNodeList = NULL;
+
+	CacheHeadAux->mHead = NewCacheHead;
+
+clean:
+
+	return r;
+}
+
 int gs_cache_head_aux_refresh(
 	struct XsCacheHeadAux *CacheHeadAux,
 	const char *RepositoryPath, size_t LenRepository,
@@ -88,13 +105,13 @@ int gs_cache_head_aux_refresh(
 	/* double-checked locking */
 
 	Head = CacheHeadAux->mHead;
-	if (!Head || git_oid_cmp(&Head->mOid, WantedTreeHeadOid) == 0) {
+	if (Head && git_oid_cmp(&Head->mOid, WantedTreeHeadOid) == 0) {
 		GS_ERR_NO_CLEAN(0);
 	}
 	else {
 		std::unique_lock<std::mutex> Lock(CacheHeadAux->mMutex);
 		Head = CacheHeadAux->mHead;
-		if (!Head || git_oid_cmp(&Head->mOid, WantedTreeHeadOid) == 0)
+		if (Head && git_oid_cmp(&Head->mOid, WantedTreeHeadOid) == 0)
 			GS_ERR_NO_CLEAN(0);
 
 		if (!!(r = gs_treelist(RepositoryPath, LenRepository, WantedTreeHeadOid, &NodeList)))
@@ -738,6 +755,8 @@ int gs_net4_serv_start(struct GsAuxConfigCommonVars *CommonVars)
 	if (!!(r = xs_net4_socket_listen_create(std::to_string(CommonVars->ServPort).c_str(), &ListenFd)))
 		GS_GOTO_CLEAN();
 
+	if (!!(r = gs_cache_head_aux_init_default(&Ext->mCacheHead)))
+		GS_GOTO_CLEAN();
 	Ext->mCommonVars = *CommonVars;
 	if (!!(r = gs_repo_compute_path(CommonVars->RepoMainPathBuf, CommonVars->LenRepoMainPath, Ext->mRepositoryPathBuf, sizeof Ext->mRepositoryPathBuf, &Ext->LenRepositoryPath)))
 		GS_GOTO_CLEAN();

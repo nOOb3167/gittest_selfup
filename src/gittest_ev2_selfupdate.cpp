@@ -197,7 +197,10 @@ int gs_ev2_mainupdate_full(
 	if (!!(r = clnt_state_code(Ctx->mClntState, &Code)))
 		GS_GOTO_CLEAN();
 
-	GS_LOG(I, PF, "finish mainupdate [code=%d]", (int) Code);
+	GS_LOG(I, PF, "finish mainupdate [code=%d] [err=%d]", (int) Code, (int) Ctx->base.mIsError);
+
+	if (Ctx->base.mIsError)
+		GS_ERR_CLEAN(1);
 
 	if (Code == GS_CLNT_STATE_CODE_NEED_TREE_HEAD)
 		GS_ERR_NO_CLEAN(0);  // exited upon finding gotten HEAD needs no update triggered
