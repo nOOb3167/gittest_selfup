@@ -236,7 +236,7 @@ int tree_toposort_visit2(const char *RepositoryPathBuf, size_t LenRepositoryPath
 		const char *FileName = NULL;
 		size_t FileNameLen = 0;
 		git_oid TreeOid = {};
-		while (!(r = git_memes_tree(Tree->mDataBuf, Tree->mLenData, &Offset, &Mode, &FileName, &FileNameLen, &TreeOid)) && Offset != -1) {
+		while (!(r = git_memes_tree(Tree->mDataBuf + Tree->mTreeOffset, Tree->mTreeSize, &Offset, &Mode, &FileName, &FileNameLen, &TreeOid)) && Offset != -1) {
 			struct GsTreeInflated *TreeSubTree = NULL;
 			if (Mode != GIT_FILEMODE_TREE)
 				continue;
