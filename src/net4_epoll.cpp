@@ -21,6 +21,7 @@
 #include <sys/eventfd.h>
 
 #include <gittest/misc.h>
+#include <gittest/log.h>
 #include <gittest/net4.h>
 #include <gittest/gittest.h> // aux_LE_to_uint32
 
@@ -676,6 +677,8 @@ clean:
 void receiver_func(int Id, int EPollFd, int EvtFdExitReq)
 {
 	int r = 0;
+
+	log_guard_t Log(GS_LOG_GET("serv_worker"));
 
 	while (true) {
 		struct epoll_event events[NEVTS] = {};
