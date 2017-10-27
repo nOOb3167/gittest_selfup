@@ -706,13 +706,44 @@ int aux_deserialize_objects(
 
 	GS_ASSERT(DataStartObjectBuffer + OffsetObjectBuffer + CumulativeSize <= DataStartObjectBuffer + DataLengthObjectBuffer);
 
-	WrittenObjectOid.resize(SizeVector.size());
-	for (uint32_t idx = 0, i = 0; i < SizeVector.size(); idx+=SizeVector[i], i++) {
-		git_oid FreshOid = {};
-		/* NOTE: supposedly git_odb_stream_write recommended */
-		if (!!(r = git_odb_write(&FreshOid, OdbT, DataStartObjectBuffer + OffsetObjectBuffer + idx, SizeVector[i], WrittenObjectType)))
-			goto clean;
-		git_oid_cpy(&WrittenObjectOid[i], &FreshOid);
+	if (WrittenObjectType == GIT_OBJ_TREE) {
+		WrittenObjectOid.resize(SizeVector.size());
+		for (uint32_t idx = 0, i = 0; i < SizeVector.size(); idx += SizeVector[i], i++) {
+			git_buf ReceivedInflated = {};
+			git_otype ReceivedObjectType = GIT_OBJ_BAD;
+			size_t ReceivedDataOffset = 0;
+			size_t ReceivedDataSize = 0;
+			git_oid FreshOid = {};
+			/* trees received in loose object format (DEFLATE compressed header&data) */
+			if (!!(r = git_memes_inflate(
+				(const char *)(DataStartObjectBuffer + OffsetObjectBuffer + idx), SizeVector[i],
+				&ReceivedInflated,
+				&ReceivedObjectType, &ReceivedDataOffset, &ReceivedDataSize)))
+			{
+				goto cleansub;
+			}
+			// FIXME: also compute and possibly check hash?
+			if (ReceivedObjectType != WrittenObjectType)
+				{ r = 1; goto cleansub; }
+			/* NOTE: supposedly git_odb_stream_write recommended */
+			if (!!(r = git_odb_write(&FreshOid, OdbT, ReceivedInflated.ptr + ReceivedDataOffset, ReceivedDataSize, ReceivedObjectType)))
+				goto cleansub;
+			git_oid_cpy(&WrittenObjectOid[i], &FreshOid);
+		cleansub:
+			git_buf_free(&ReceivedInflated);
+			if (!!r)
+				goto clean;
+		}
+	}
+	else {
+		WrittenObjectOid.resize(SizeVector.size());
+		for (uint32_t idx = 0, i = 0; i < SizeVector.size(); idx += SizeVector[i], i++) {
+			git_oid FreshOid = {};
+			/* NOTE: supposedly git_odb_stream_write recommended */
+			if (!!(r = git_odb_write(&FreshOid, OdbT, DataStartObjectBuffer + OffsetObjectBuffer + idx, SizeVector[i], WrittenObjectType)))
+				goto clean;
+			git_oid_cpy(&WrittenObjectOid[i], &FreshOid);
+		}
 	}
 
 	if (oWrittenObjectOid)

@@ -263,7 +263,7 @@ bool aux_frame_is_frametype(uint8_t *DataStart, uint32_t DataLength, uint32_t Of
 	const GsFrameType &FrameType)
 {
 	GsFrameType FoundFrameType = {};
-	if (!! aux_frame_read_frametype(DataStart, DataLength, Offset, &Offset, &FoundFrameType))
+	if (!! aux_frame_read_frametype(DataStart, DataLength, Offset, OffsetNew, &FoundFrameType))
 		return 0;
 	return aux_frametype_equals(FoundFrameType, FrameType);
 }
