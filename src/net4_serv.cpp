@@ -727,9 +727,18 @@ int cbwriteonly1(struct XsConCtx *CtxBase)
 				GS_GOTO_CLEAN();
 		}
 		else {
-			/* finished */
+			/* finishing */
+			std::string Buffer;
+			GS_BYPART_DATA_VAR(String, BpBuffer);
+			GS_BYPART_DATA_INIT(String, BpBuffer, &Buffer);
+			/* reset writeonly preparing for done message */
 			GS_ASSERT(Ctx->mWriteOnlyServ.mWritingHead >= Ctx->mWriteOnlyServ.mWriting.size());
 			if (!!(r = gs_write_only_serv_blobs3_reset(Ctx)))
+				GS_GOTO_CLEAN();
+			/* done message */
+			if (!!(r = aux_frame_full_write_response_blobs3_done(gs_bysize_cb_String, &BpBuffer)))
+				GS_GOTO_CLEAN();
+			if (!!(r = xs_write_only_data_buffer_init_copying_outering(WriteOnly, Buffer.data(), Buffer.size())))
 				GS_GOTO_CLEAN();
 		}
 	}
