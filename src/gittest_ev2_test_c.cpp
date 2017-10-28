@@ -62,8 +62,8 @@ int gs_ev_clnt_state_received_oneshot_blob_cond(
 	uint32_t Offset = 0;
 	uint32_t LengthLimit = 0;
 
-	git_oid OidReceivedHdr = {};
 	git_oid OidReceivedDat = {};
+	git_oid OidMissingNxt = {};
 	git_buf Inflated = {};
 	git_otype Type = GIT_OBJ_BAD;
 	size_t BlobOffset;
@@ -81,9 +81,6 @@ int gs_ev_clnt_state_received_oneshot_blob_cond(
 
 	GS_ASSERT(LengthLimit == Packet->dataLength);
 
-	if (!!(r = aux_frame_read_oid(Packet->data, Packet->dataLength, Offset, &Offset, OidReceivedHdr.id, GIT_OID_RAWSZ)))
-		GS_GOTO_CLEAN();
-
 	if (!!(r = git_memes_inflate((const char *) Packet->data + Offset, LengthLimit - Offset, &Inflated, &Type, &BlobOffset, &BlobSize)))
 		GS_GOTO_CLEAN();
 
@@ -93,13 +90,17 @@ int gs_ev_clnt_state_received_oneshot_blob_cond(
 	if (!!(r = git_odb_hash(&OidReceivedDat, Inflated.ptr + BlobOffset, BlobSize, Type)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = git_oid_cmp(&OidReceivedHdr, &OidReceivedDat)))
+	/* validate hash against next entry of the missing bloblist
+	   this couples with client requesting (and server responding to) missing entries in-order */
+
+	if (!(Ctx->mClntState->mWrittenBlob->size() + Ctx->mClntState->mReceivedOneShotBlob->size() < Ctx->mClntState->mMissingBloblist->size()))
+		GS_ERR_CLEAN(1);
+	git_oid_cpy(&OidMissingNxt, Ctx->mClntState->mMissingBloblist->data() + Ctx->mClntState->mWrittenBlob->size() + Ctx->mClntState->mReceivedOneShotBlob->size());
+
+	if (!!(r = aux_deserialize_object(* Ctx->mClntState->mRepositoryT, Inflated.ptr + BlobOffset, BlobSize, Type, &OidMissingNxt)))
 		GS_GOTO_CLEAN();
 
-	if (!!(r = aux_deserialize_object(* Ctx->mClntState->mRepositoryT, Inflated.ptr + BlobOffset, BlobSize, Type, &OidReceivedHdr)))
-		GS_GOTO_CLEAN();
-
-	Ctx->mClntState->mReceivedOneShotBlob->push_back(OidReceivedHdr);
+	Ctx->mClntState->mReceivedOneShotBlob->push_back(OidMissingNxt);
 
 noclean:
 	if (oIsHandledBy)
