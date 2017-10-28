@@ -703,7 +703,7 @@ int cbwriteonly1(struct XsConCtx *CtxBase)
 
 		if (HeadIsNew) {
 			/* activate header sending behavior */
-			const size_t PayloadLen = GIT_OID_RAWSZ + Ctx->mWriteOnlyServ.mWritingSendFile.mLen;
+			const size_t PayloadLen = Ctx->mWriteOnlyServ.mWritingSendFile.mLen;
 
 			std::string HdrBuffer;
 			GS_BYPART_DATA_VAR(String, BpBuffer);
