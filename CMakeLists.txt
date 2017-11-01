@@ -202,9 +202,11 @@ TARGET_COMPILE_DEFINITIONS(gittest_ev2_selfupdate_clone PRIVATE GS_CONFIG_DEFS_G
 
 IF (WIN32)
   SET(GITTEST_PLAT_HEADERS_NIX
+    ${GITTEST_COMMON_HEADERS_NIX}
     include/gittest/net4.h
   )
   SET(GITTEST_PLAT_SOURCES_NIX
+    ${GITTEST_COMMON_SOURCES_NIX}
     src/gui_nix.cpp
     src/net4_epoll.cpp
     src/net4_serv.cpp

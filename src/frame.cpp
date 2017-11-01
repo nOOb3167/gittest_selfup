@@ -732,6 +732,31 @@ clean:
 	return r;
 }
 
+int aux_frame_part_write_for_payload_lowlevel(
+	const GsFrameType &FrameType, uint32_t PayloadSize,
+	char *ioBytes48Buf, size_t Bytes48Size)
+{
+	/* signalsafe / lowlevel - must be callable in a crash handler */
+
+	size_t Offset = 0;
+	uint32_t BufferSize = GS_FRAME_HEADER_LEN + GS_FRAME_SIZE_LEN;
+
+	if (Bytes48Size != BufferSize)
+		return 1;
+
+	memcpy(ioBytes48Buf + Offset, FrameType.mTypeName, GS_FRAME_HEADER_STR_LEN);
+	Offset += GS_FRAME_HEADER_STR_LEN;
+	aux_uint32_to_LE(FrameType.mTypeNum, ioBytes48Buf + Offset, GS_FRAME_HEADER_NUM_LEN);
+	Offset += GS_FRAME_HEADER_NUM_LEN;
+
+	aux_uint32_to_LE(PayloadSize, ioBytes48Buf + Offset, GS_FRAME_SIZE_LEN);
+	Offset += GS_FRAME_SIZE_LEN;
+
+	GS_ASSERT(Offset == BufferSize);
+
+	return 0;
+}
+
 /** FIXME: unused code? */
 int aux_frame_read_oid_vec_cpp(
 	uint8_t *DataStart, uint32_t DataLength, uint32_t Offset, uint32_t *OffsetNew,

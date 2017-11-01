@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <string>
+
 #include <gittest/misc.h>
 #include <gittest/config.h>
 #include <gittest/log.h>
@@ -9,6 +11,7 @@
 #include <gittest/net4.h>
 
 GsLogList *g_gs_log_list_global = gs_log_list_global_create();
+GsCrashHandlerDumpExtraNet4 g_net4_crash_handler = {};
 
 int main(int argc, char **argv)
 {
@@ -30,6 +33,18 @@ int main(int argc, char **argv)
 		GS_GOTO_CLEAN();
 
 	if (!!(r = gs_config_create_common_logs(ConfMap)))
+		GS_GOTO_CLEAN();
+
+	if (!!(r = gs_net4_crash_handler_init(
+		NULL, 0,
+		CommonVars.ServHostNameBuf, CommonVars.LenServHostName,
+		std::to_string(CommonVars.ServPort).c_str(),
+		&g_net4_crash_handler)))
+	{
+		GS_GOTO_CLEAN();
+	}
+
+	if (!!(r = gs_log_list_set_func_dump_extra(GS_LOG_LIST_GLOBAL_NAME, gs_net4_crash_handler_log_dump_extra_func, &g_net4_crash_handler.base)))
 		GS_GOTO_CLEAN();
 
 	{

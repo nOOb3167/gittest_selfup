@@ -1,8 +1,12 @@
 #ifndef _GITTEST_NET4_H_
 #define _GITTEST_NET4_H_
 
+#include <stdint.h>
+
 #include <gittest/misc.h>
 #include <gittest/gittest_ev2_test.h>  // ex GsPacket
+
+#define XS_CRASH_HANDLER_REMOTE_SEND_SIZE_MAX (200 * 1024)
 
 #define XS_WRITE_ONLY_TYPE_NONE     0
 #define XS_WRITE_ONLY_TYPE_BUFFER   1
@@ -13,6 +17,14 @@ typedef unsigned long XsWriteOnlyType;
 
 /* intended to be forward-declared in header (API use pointer only) */
 struct XsServCtl;
+
+struct GsCrashHandlerDumpExtraNet4
+{
+	struct GsCrashHandlerDumpExtra base;
+
+	const char *mIdTokenBuf; size_t mLenIdToken;
+	uint32_t mAddrHostByteOrder; uint32_t mPortHostByteOrder;
+};
 
 enum XsSockType
 {
@@ -73,6 +85,17 @@ struct XsConCtx
 };
 
 typedef int(*xs_cb_ctx_create_t)(struct XsConCtx **oCtxBase, enum XsSockType Type, struct XsConExt *Ext);
+
+int gs_net4_crash_handler_log_dump_remote(
+	const char *IdTokenBuf, size_t LenIdToken,
+	uint32_t AddrHostByteOrder, uint32_t PortHostByteOrder,
+	size_t ConnectTimeoutSec);
+int gs_net4_crash_handler_init(
+	const char *IdTokenBuf, size_t LenIdToken,
+	const char *ServHostNameBuf, size_t LenServHostName,
+	const char *ServPort,
+	struct GsCrashHandlerDumpExtraNet4 *ioGlobal);
+int gs_net4_crash_handler_log_dump_extra_func(struct GsLogList *LogList, struct GsCrashHandlerDumpExtra *CtxBase);
 
 int xs_net4_write_frame_outer_header(
 	size_t LenData,

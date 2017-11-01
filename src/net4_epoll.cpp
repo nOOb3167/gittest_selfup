@@ -19,11 +19,14 @@
 #include <sys/epoll.h>
 #include <sys/sendfile.h>
 #include <sys/eventfd.h>
+#include <sys/random.h>      // getrandom (consider getentropy for BSD compatibility?)
 
 #include <gittest/misc.h>
 #include <gittest/log.h>
+#include <gittest/filesys.h>
 #include <gittest/net4.h>
 #include <gittest/gittest.h> // aux_LE_to_uint32
+#include <gittest/frame.h>   // aux_frame_part_write_for_payload_lowlevel
 
 // https://www.freedesktop.org/software/systemd/man/systemd.socket.html
 //   It should not invoke shutdown(2) on sockets it got with Accept=false
@@ -70,6 +73,209 @@ static int writeonly1(struct XsConCtx *Ctx);
 
 static void receiver_func(int Id, int EPollFd, int EvtFdExitReq);
 
+struct GsNet4DumpRemoteData { uint32_t Tripwire; int Fd; int IsError; size_t Limit; };
+static int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l);
+#define GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA 0x48D09680
+
+struct GsNet4CrashHandler
+{
+	const char *mIdTokenBuf; size_t mLenIdToken;
+	uint32_t mAddrHostByteOrder; uint32_t mPortHostByteOrder;
+};
+
+int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l)
+{
+	int r = 0;
+
+	/* should be callable from a signal context (ex see signal-safety(7)) */
+
+	struct GsNet4DumpRemoteData *Data = (GsNet4DumpRemoteData *)ctx;
+
+	size_t Offset = 0;
+
+	if (Data->Tripwire != GS_TRIPWIRE_LOG_CRASH_HANDLER_DUMP_BUF_DATA)
+		return 1;
+
+	if (Data->IsError)
+		return 1;
+
+	while (Offset < l) {
+		ssize_t nsent = 0;
+		while (-1 == (nsent = sendto(Data->Fd, d + Offset, l - Offset, MSG_NOSIGNAL, NULL, 0))) {
+			if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+				continue;
+			} else {
+				Data->IsError;
+				return 1;
+			};
+		}
+		Offset += nsent;
+	}
+
+	return 0;
+}
+
+int gs_net4_crash_handler_log_dump_remote(
+	const char *IdTokenBuf, size_t LenIdToken,
+	uint32_t AddrHostByteOrder, uint32_t PortHostByteOrder,
+	size_t ConnectTimeoutSec)
+{
+	int r = 0;
+
+	/* should be callable from a signal context (ex see signal-safety(7)) */
+
+	int ConnectFd = -1;
+	struct in_addr InAddr = {};
+	struct sockaddr_in SockAddr = {};
+
+	int NReady = -1;
+	int ConnectError = 0;
+	socklen_t LenConnectError = sizeof ConnectError;
+
+	InAddr.s_addr = htonl(AddrHostByteOrder);
+	SockAddr.sin_family = AF_INET;
+	SockAddr.sin_port = htons(PortHostByteOrder);
+	SockAddr.sin_addr = InAddr;
+
+	if (-1 == (ConnectFd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)))
+		{ r = 1; goto clean; }
+
+	while (-1 == connect(ConnectFd, (struct sockaddr *)&SockAddr, sizeof SockAddr)) {
+		if (errno == EINTR)
+			continue;
+		if (errno == EINPROGRESS) {
+			FD_ZERO(&WSet);
+			FD_SET(ConnectFd, &WSet);
+			TVal.tv_sec = ConnectTimeoutSec;
+			TVal.tv_usec = 0;
+
+			while (-1 == (NReady = select(ConnectFd + 1, NULL, &WSet, NULL, &TVal))) {
+				if (errno == EINTR)
+					continue;
+				{ r = 1; goto clean; }
+			}
+
+			if (NReady == 0 || ! FD_ISSET(ConnectFd, &WSet))
+				{ r = 1; goto clean; }
+			if (-1 == getsockopt(ConnectFd, SOL_SOCKET, SO_ERROR, &ConnectError, &LenConnectError))
+				{ r = 1; goto clean; }
+			if (ConnectError != 0)
+				{ r = 1; goto clean; }
+
+			break;
+		}
+		{ r = 1; goto clean; }
+	}
+
+	{
+		struct GsNet4DumpRemoteData Data = {};
+		Data.Tripwire = GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA;
+		Data.Fd = ConnectFd;
+		Data.IsError = 0;
+		size_t SizeDump = 0;
+		char OuterHeaderBuf[9] = {};
+		char Header48Buf[48] = {};
+
+		if (!!(r = gs_log_list_size_all_lowlevel(GS_LOG_LIST_GLOBAL_NAME, &SizeDump)))
+			goto clean;
+
+		if (!!(r = xs_net4_write_frame_outer_header(SizeDump, OuterHeaderBuf, sizeof OuterHeaderBuf, NULL)))
+			goto clean;
+
+		if (!!(r = aux_frame_part_write_for_payload_lowlevel(GS_FRAME_TYPE_DECL(MESSAGE_LOGDUMP), SizeDump, Header48Buf, sizeof Header48Buf)))
+			goto clean;
+
+		if (!!(r = gs_log_list_dump_all_lowlevel(GS_LOG_LIST_GLOBAL_NAME, &Data, gs_net4_dump_remote_cb)))
+			goto clean;
+	}
+
+clean:
+	if (ConnectFd != -1)
+		close(ConnectFd);
+
+	return r;
+}
+
+int gs_net4_crash_handler_init(
+	const char *IdTokenBuf, size_t LenIdToken,
+	const char *ServHostNameBuf, size_t LenServHostName,
+	const char *ServPort,
+	struct GsNet4CrashHandler *ioGlobal)
+{
+	int r = 0;
+
+	char RandomIdShim[20] = {};
+	char *Buf = NULL;
+	struct addrinfo Hints = {};
+	struct addrinfo *Res = NULL, *Rp = NULL;
+	uint32_t AddrHostByteOrder;
+	uint32_t PortHostByteOrder;
+
+	if (!IdTokenBuf) {
+		/* generate random token if missing token parameter */
+		GS_ASSERT(! LenIdToken);
+		IdTokenBuf = RandomIdShim;
+		LenIdToken = sizeof RandomIdShim;
+		if (LenIdToken != getrandom(IdTokenBuf, LenIdToken, 0))
+			{ r = 1; goto clean; }
+	}
+
+	if (!(Buf = (char *) malloc(LenIdToken)))
+		{ r = 1; goto clean; }
+	memcpy(Buf, IdTokenBuf, LenIdToken);
+
+	Hints.ai_flags = AI_NUMERICSERV;
+	// FIXME: RIP ipv6, see AF_UNSPEC
+	Hints.ai_family = AF_INET;
+	Hints.ai_socktype = SOCK_STREAM;
+	Hints.ai_protocol = 0;
+
+	if (!!(r = gs_buf_ensure_haszero(ServHostNameBuf, LenServHostName + 1)))
+		goto clean;
+
+	if (!! getaddrinfo(ServHostNameBuf, ServPort, &Hints, &Res))
+		{ r = 1; goto clean; }
+
+	/* special error handling (continue) */
+	for (Rp = Res; Rp != NULL; Rp = Rp->ai_next)
+		if (Rp->ai_family == AF_INET || Rp->ai_addrlen == sizeof sockaddr_in) {
+			AddrHostByteOrder = ntohl(((struct sockaddr_in *) Rp->ai_addr)->sin_addr.s_addr);
+			PortHostByteOrder = ntohs(((struct sockaddr_in *) Rp->ai_addr)->sin_port);
+			break;
+		}
+	if (Rp == NULL)
+		{ r = 1; goto clean; }
+
+	ioGlobal->mIdTokenBuf = GS_ARGOWN(&Buf);
+	ioGlobal->mLenIdToken = LenIdToken;
+	ioGlobal->mAddrHostByteOrder = AddrHostByteOrder;
+	ioGlobal->mPortHostByteOrder = PortHostByteOrder;
+
+clean:
+	if (Res)
+		freeaddrinfo(Res);
+	free(Buf);
+
+	return r;
+}
+
+int gs_net4_crash_handler_log_dump_extra_func(struct GsLogList *LogList, struct GsCrashHandlerDumpExtra *CtxBase)
+{
+	int r = 0;
+
+	/* should be callable from a signal context (ex see signal-safety(7)) */
+	/* use with parameters typed gs_log_list_func_dump_extra_lowlevel_t */
+
+	struct GsCrashHandlerDumpExtraNet4 *Ctx = (struct GsCrashHandlerDumpExtraNet4 *) CtxBase;
+
+	if (!!(r = gs_net4_crash_handler_log_dump_remote(Ctx->mIdTokenBuf, Ctx->mLenIdToken, Ctx->mAddrHostByteOrder, Ctx->mPortHostByteOrder, GS_LOG_DUMP_EXTRA_ARBITRARY_TIMEOUT_MSEC)))
+		goto clean;
+
+clean:
+
+	return r;
+}
+
 void sender_func(struct XsServCtl *ServCtl)
 {
 	int r = 0;
@@ -100,12 +306,10 @@ void sender_func(struct XsServCtl *ServCtl)
 
 	/* special error handling (continue) */
 	for (Rp = Res; Rp != NULL; Rp = Rp->ai_next)
-		if (-1 == (ConnectFd = socket(Rp->ai_family, Rp->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC, Rp->ai_protocol)))
-			continue;
+		if (-1 != (ConnectFd = socket(Rp->ai_family, Rp->ai_socktype | SOCK_NONBLOCK | SOCK_CLOEXEC, Rp->ai_protocol)))
+			break;
 	if (Rp == NULL)
 		GS_ERR_CLEAN(1);
-	else
-		freeaddrinfo(Res);
 
 	while (-1 == connect(ConnectFd, Rp->ai_addr, Rp->ai_addrlen)) {
 		if (errno == EINTR)
@@ -167,6 +371,9 @@ void sender_func(struct XsServCtl *ServCtl)
 	}
 
 clean:
+	if (Res)
+		freeaddrinfo(Res);
+
 	if (!!r)
 		GS_ASSERT(0);
 }
@@ -427,6 +634,7 @@ int xs_net4_write_frame_outer_header(
 	size_t LenData,
 	char *ioNineCharBuf, size_t NineCharBufSize, size_t *oLenNineCharBuf)
 {
+	/* signalsafe / lowlevel - must be callable in a crash handler */
 	if (NineCharBufSize < 9) return 1;
 	memcpy(ioNineCharBuf + 0, "FRAME", 5);
 	aux_uint32_to_LE(LenData, ioNineCharBuf + 5, 4);
