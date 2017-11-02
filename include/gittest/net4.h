@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <gittest/misc.h>
+#include <gittest/log.h>
 #include <gittest/gittest_ev2_test.h>  // ex GsPacket
 
 #define XS_CRASH_HANDLER_REMOTE_SEND_SIZE_MAX (200 * 1024)

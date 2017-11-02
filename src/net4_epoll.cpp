@@ -77,12 +77,6 @@ struct GsNet4DumpRemoteData { uint32_t Tripwire; int Fd; int IsError; size_t Lim
 static int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l);
 #define GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA 0x48D09680
 
-struct GsNet4CrashHandler
-{
-	const char *mIdTokenBuf; size_t mLenIdToken;
-	uint32_t mAddrHostByteOrder; uint32_t mPortHostByteOrder;
-};
-
 int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l)
 {
 	int r = 0;
@@ -127,6 +121,9 @@ int gs_net4_crash_handler_log_dump_remote(
 	int ConnectFd = -1;
 	struct in_addr InAddr = {};
 	struct sockaddr_in SockAddr = {};
+
+	fd_set WSet;
+	struct timeval TVal = {};
 
 	int NReady = -1;
 	int ConnectError = 0;
@@ -200,11 +197,10 @@ int gs_net4_crash_handler_init(
 	const char *IdTokenBuf, size_t LenIdToken,
 	const char *ServHostNameBuf, size_t LenServHostName,
 	const char *ServPort,
-	struct GsNet4CrashHandler *ioGlobal)
+	struct GsCrashHandlerDumpExtraNet4 *ioGlobal)
 {
 	int r = 0;
 
-	char RandomIdShim[20] = {};
 	char *Buf = NULL;
 	struct addrinfo Hints = {};
 	struct addrinfo *Res = NULL, *Rp = NULL;
@@ -214,15 +210,17 @@ int gs_net4_crash_handler_init(
 	if (!IdTokenBuf) {
 		/* generate random token if missing token parameter */
 		GS_ASSERT(! LenIdToken);
-		IdTokenBuf = RandomIdShim;
-		LenIdToken = sizeof RandomIdShim;
-		if (LenIdToken != getrandom(IdTokenBuf, LenIdToken, 0))
+		LenIdToken = 20;
+		if (!(Buf = (char *) malloc(LenIdToken)))
+			{ r = 1; goto clean; }
+		if (LenIdToken != getrandom(Buf, LenIdToken, 0))
 			{ r = 1; goto clean; }
 	}
-
-	if (!(Buf = (char *) malloc(LenIdToken)))
-		{ r = 1; goto clean; }
-	memcpy(Buf, IdTokenBuf, LenIdToken);
+	else {
+		if (!(Buf = (char *) malloc(LenIdToken)))
+			{ r = 1; goto clean; }
+		memcpy(Buf, IdTokenBuf, LenIdToken);
+	}
 
 	Hints.ai_flags = AI_NUMERICSERV;
 	// FIXME: RIP ipv6, see AF_UNSPEC
@@ -238,7 +236,7 @@ int gs_net4_crash_handler_init(
 
 	/* special error handling (continue) */
 	for (Rp = Res; Rp != NULL; Rp = Rp->ai_next)
-		if (Rp->ai_family == AF_INET || Rp->ai_addrlen == sizeof sockaddr_in) {
+		if (Rp->ai_family == AF_INET || Rp->ai_addrlen == sizeof (sockaddr_in)) {
 			AddrHostByteOrder = ntohl(((struct sockaddr_in *) Rp->ai_addr)->sin_addr.s_addr);
 			PortHostByteOrder = ntohs(((struct sockaddr_in *) Rp->ai_addr)->sin_port);
 			break;
