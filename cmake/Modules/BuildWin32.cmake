@@ -58,7 +58,7 @@ SET(GITTEST_EV2_SELFUPDATE_SOURCES
   ${GITTEST_LIB_SOURCES}
 )
 
-# other platform headers and sources
+# other platform headers and sources (for dummylib)
 
 SET(GITTEST_PLAT_HEADERS_NIX
   include/gittest/net4.h
