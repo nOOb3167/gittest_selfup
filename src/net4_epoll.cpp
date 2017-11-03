@@ -767,9 +767,9 @@ int crank1readframe(struct XsConCtx *Ctx)
 		Packet.data = (uint8_t *)Ctx->mRcvBuf.mBuf + Offset;
 		Packet.dataLength = FrameLen;
 		/* 'commit' frame by updating offset */
+		Offset += FrameLen;
 		Ctx->mRcvBuf.mBufOffset = Offset;
 		/* handoff frame */
-		Offset += FrameLen;
 		GS_ASSERT(Ctx->mWriteOnly.mType == XS_WRITE_ONLY_TYPE_NONE);
 		if (!!(r = Ctx->CbCrank(Ctx, &Packet)))
 			GS_GOTO_CLEAN();
