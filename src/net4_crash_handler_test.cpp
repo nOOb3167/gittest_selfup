@@ -17,6 +17,8 @@ static int dostuff(struct GsAuxConfigCommonVars *CommonVars)
 {
 	int r = 0;
 
+	GS_LOG(I, S, "[dummy]");
+
 	{
 		int *X = NULL;
 		*X = 1234;

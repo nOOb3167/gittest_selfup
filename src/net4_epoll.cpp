@@ -87,7 +87,7 @@ int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l)
 
 	size_t Offset = 0;
 
-	if (Data->Tripwire != GS_TRIPWIRE_LOG_CRASH_HANDLER_DUMP_BUF_DATA)
+	if (Data->Tripwire != GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA)
 		return 1;
 
 	if (Data->IsError)
@@ -134,7 +134,7 @@ int gs_net4_crash_handler_log_dump_remote(
 	SockAddr.sin_port = htons(PortHostByteOrder);
 	SockAddr.sin_addr = InAddr;
 
-	if (-1 == (ConnectFd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)))
+	if (-1 == (ConnectFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)))
 		{ r = 1; goto clean; }
 
 	while (-1 == connect(ConnectFd, (struct sockaddr *)&SockAddr, sizeof SockAddr)) {
@@ -636,7 +636,8 @@ int xs_net4_write_frame_outer_header(
 	if (NineCharBufSize < 9) return 1;
 	memcpy(ioNineCharBuf + 0, "FRAME", 5);
 	aux_uint32_to_LE(LenData, ioNineCharBuf + 5, 4);
-	*oLenNineCharBuf = 9;
+	if (oLenNineCharBuf)
+		*oLenNineCharBuf = 9;
 	return 0;
 }
 
