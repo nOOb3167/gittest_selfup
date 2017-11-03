@@ -390,6 +390,21 @@ int gs_net4_serv_state_crank3(
 	switch (FoundFrameType.mTypeNum)
 	{
 
+	case GS_FRAME_TYPE_MESSAGE_LOGDUMP:
+	{
+		uint32_t Offset = OffsetSize;
+		uint32_t LengthLimit = 0;
+
+		if (!!(r = aux_frame_read_size_limit(Packet->data, Packet->dataLength, Offset, &Offset, GS_FRAME_SIZE_LEN, &LengthLimit)))
+			GS_GOTO_CLEAN();
+
+		{
+			log_guard_t Log(GS_LOG_GET("crash_dump"));
+			GS_LOG(I, LINEPREFIX, (const char *)(Packet->data + Offset), LengthLimit - Offset);
+		}
+	}
+	break;
+
 	case GS_FRAME_TYPE_REQUEST_LATEST_COMMIT_TREE:
 	{
 		std::string ResponseBuffer;
