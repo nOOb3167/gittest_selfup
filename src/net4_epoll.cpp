@@ -73,7 +73,7 @@ static int writeonly1(struct XsConCtx *Ctx);
 
 static void receiver_func(int Id, int EPollFd, int EvtFdExitReq);
 
-struct GsNet4DumpRemoteData { uint32_t Tripwire; int Fd; int IsError; size_t Limit; };
+struct GsNet4DumpRemoteData { uint32_t Tripwire; int Fd; int IsError; size_t NumLeft; };
 static int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l);
 #define GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA 0x48D09680
 
@@ -93,6 +93,11 @@ int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l)
 	if (Data->IsError)
 		return 1;
 
+	if (Data->NumLeft == 0)
+		return 0;
+
+	l = GS_MIN(l, Data->NumLeft);
+
 	while (Offset < l) {
 		ssize_t nsent = 0;
 		while (-1 == (nsent = sendto(Data->Fd, d + Offset, l - Offset, MSG_NOSIGNAL, NULL, 0))) {
@@ -104,6 +109,7 @@ int gs_net4_dump_remote_cb(void *ctx, const char *d, int64_t l)
 			};
 		}
 		Offset += nsent;
+		Data->NumLeft -= nsent;
 	}
 
 	return 0;
@@ -166,9 +172,6 @@ int gs_net4_crash_handler_log_dump_remote(
 
 	{
 		struct GsNet4DumpRemoteData Data = {};
-		Data.Tripwire = GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA;
-		Data.Fd = ConnectFd;
-		Data.IsError = 0;
 		size_t SizeDump = 0;
 		char OuterHeaderBuf[9] = {};
 		char Header48Buf[48] = {};
@@ -176,10 +179,19 @@ int gs_net4_crash_handler_log_dump_remote(
 		if (!!(r = gs_log_list_size_all_lowlevel(GS_LOG_LIST_GLOBAL_NAME, &SizeDump)))
 			goto clean;
 
-		if (!!(r = xs_net4_write_frame_outer_header(SizeDump, OuterHeaderBuf, sizeof OuterHeaderBuf, NULL)))
+		if (!!(r = xs_net4_write_frame_outer_header(sizeof Header48Buf + SizeDump, OuterHeaderBuf, sizeof OuterHeaderBuf, NULL)))
+			goto clean;
+		if (!!(r = aux_frame_part_write_for_payload_lowlevel(GS_FRAME_TYPE_DECL(MESSAGE_LOGDUMP), SizeDump, Header48Buf, sizeof Header48Buf)))
 			goto clean;
 
-		if (!!(r = aux_frame_part_write_for_payload_lowlevel(GS_FRAME_TYPE_DECL(MESSAGE_LOGDUMP), SizeDump, Header48Buf, sizeof Header48Buf)))
+		Data.Tripwire = GS_TRIPWIRE_NET4_DUMP_REMOTE_DATA;
+		Data.Fd = ConnectFd;
+		Data.IsError = 0;
+		Data.NumLeft = sizeof OuterHeaderBuf + sizeof Header48Buf + SizeDump;
+
+		if (!!(r = gs_net4_dump_remote_cb(&Data, OuterHeaderBuf, sizeof OuterHeaderBuf)))
+			goto clean;
+		if (!!(r = gs_net4_dump_remote_cb(&Data, Header48Buf, sizeof Header48Buf)))
 			goto clean;
 
 		if (!!(r = gs_log_list_dump_all_lowlevel(GS_LOG_LIST_GLOBAL_NAME, &Data, gs_net4_dump_remote_cb)))
@@ -734,10 +746,10 @@ int crank1readframe(struct XsConCtx *Ctx)
 	int r = 0;
 
 	const size_t FrameHdrLen = 5 /*MAGIC*/ + 4 /*len*/;
-	size_t Offset = Ctx->mRcvBuf.mBufOffset;
 
 	/* we can process frames until we are requested writeonly mode */
-	while (Ctx->mRcvBuf.mBufLen - Offset >= FrameHdrLen) {
+	while (Ctx->mRcvBuf.mBufLen - Ctx->mRcvBuf.mBufOffset >= FrameHdrLen) {
+		size_t Offset = Ctx->mRcvBuf.mBufOffset;
 		uint32_t FrameLen = 0;
 		struct GsPacket Packet = {};
 
@@ -754,6 +766,8 @@ int crank1readframe(struct XsConCtx *Ctx)
 		/* have frame */
 		Packet.data = (uint8_t *)Ctx->mRcvBuf.mBuf + Offset;
 		Packet.dataLength = FrameLen;
+		/* 'commit' frame by updating offset */
+		Ctx->mRcvBuf.mBufOffset = Offset;
 		/* handoff frame */
 		Offset += FrameLen;
 		GS_ASSERT(Ctx->mWriteOnly.mType == XS_WRITE_ONLY_TYPE_NONE);
@@ -762,8 +776,6 @@ int crank1readframe(struct XsConCtx *Ctx)
 		if (Ctx->mWriteOnly.mType != XS_WRITE_ONLY_TYPE_NONE)
 			break;
 	}
-
-	Ctx->mRcvBuf.mBufOffset = Offset;
 
 clean:
 
