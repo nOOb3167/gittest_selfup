@@ -69,6 +69,7 @@ SET(GITTEST_PLAT_SOURCES_NIX
   src/net4_epoll.cpp
   src/net4_serv.cpp
   src/net4_serv_main.cpp
+  src/net4_crash_handler_test.cpp
   ${GITTEST_COMMON_SOURCES_NIX}
 )
 
